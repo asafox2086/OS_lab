@@ -5,7 +5,11 @@
 1. 使用 buddy allocator 动态分配 `struct file`，不再受 `NFILE` 固定数组限制。
 2. 实现用户内存的 lazy allocation，即 `sbrk()` 只增加进程地址空间大小，真正访问页面时才分配物理页。
 
-## 一、动态分配文件结构体
+代码修改遵循最少改动原则：只修改实验要求涉及的功能，尽量复用 xv6 原有的函数、数据结构和执行流程，不添加无关功能或重构。
+
+## 一、改了哪里
+
+### 1. 动态分配文件结构体
 
 原来的 xv6 使用固定数组：
 
@@ -71,7 +75,7 @@ bd_malloc(sizeof(struct file))
 buddy allocator 分配内存
 ```
 
-## 二、Buddy allocator 的位图优化
+### 2. Buddy allocator 的位图优化
 
 原来的 `alloc` 位图为每个 block 保存一个 bit。优化后，每一对 buddy block 只使用一个 bit：
 
@@ -129,7 +133,7 @@ bit_flip(bd_sizes[k].alloc, pi);
 
 这样可以将 `alloc` 位图的空间开销减少一半。
 
-## 三、`sys_sbrk()` 的修改
+### 3. `sys_sbrk()` 的修改
 
 原来的 `sbrk()` 会调用 `growproc(n)`，立即分配物理页：
 
@@ -182,7 +186,9 @@ p->sz += 4096
 
 负数参数仍然调用 `growproc(n)`，用于释放缩小后的地址空间。
 
-## 四、用户态 page fault 的处理
+## 二、改之后的算法是什么
+
+### 1. 用户态 page fault 的处理
 
 RISC-V 中常见的用户页面错误原因是：
 
@@ -211,7 +217,7 @@ stval = 0x4008
 PGROUNDDOWN(0x4008) = 0x4000
 ```
 
-## 五、`lazyalloc()` 的实现过程
+### 2. `lazyalloc()` 的实现过程
 
 核心函数如下：
 
@@ -277,7 +283,7 @@ bd_malloc(PGSIZE)
 buddy allocator 分配一个物理页
 ```
 
-## 六、`echo hi` 的执行过程
+### 3. `echo hi` 的执行过程
 
 执行：
 
@@ -317,7 +323,7 @@ mappages() 建立映射
 
 这就是延迟分配：只有真正访问到的页面才占用物理内存。
 
-## 七、系统调用访问 lazy page
+### 4. 系统调用访问 lazy page
 
 用户程序可能将尚未实际分配的地址传给系统调用：
 
@@ -361,7 +367,7 @@ lazyalloc()
 完成数据复制
 ```
 
-## 八、`uvmunmap()` 的修改
+### 5. `uvmunmap()` 的修改
 
 lazy allocation 下，进程的地址空间范围内可能存在从未访问过的页面。这些页面没有实际的物理映射。
 
@@ -380,7 +386,7 @@ lazy allocation 下，进程的地址空间范围内可能存在从未访问过�
 panic: uvmunmap: not mapped
 ```
 
-## 九、`uvmcopy()` 的修改
+### 6. `uvmcopy()` 的修改
 
 `fork()` 会调用 `uvmcopy()`。父进程的 lazy page 可能尚未映射，因此不能再假设每一页都存在：
 
@@ -393,7 +399,7 @@ if((*pte & PTE_V) == 0)
 
 父进程和子进程都可以暂时没有这页的物理映射。以后哪个进程访问该地址，哪个进程就通过 page fault 分配自己的物理页。
 
-## 十、一个完整例子
+### 7. 一个完整例子
 
 用户程序执行：
 
@@ -425,7 +431,7 @@ p[4096] = 'b';
 
 最终只为真正访问过的页面分配物理内存。
 
-## 十一、编译和测试
+### 8. 编译和测试
 
 进入 xv6 目录：
 
