@@ -1,6 +1,6 @@
 # xv6 Lab 7：mmap/munmap 实验报告
 
-本实验遵循最少改动原则，只增加 mmap/munmap 所需的数据结构、系统调用接线、缺页处理和映射生命周期管理。官方 `mmaptest` 临时恢复用于测试，测试完成后已删除，没有加入最终提交。
+本实验遵循最少改动原则，只增加 mmap/munmap 所需的数据结构、系统调用接线、缺页处理和映射生命周期管理。官方 `mmaptest` 保留在用户程序列表中，作为评分测试入口。
 
 ## 一、改了哪里
 
@@ -102,6 +102,6 @@ mmap()
 ## 测试结果
 
 - `mmaptest`：`mmap_test OK`、`fork_test OK`、`mmaptest: all tests succeeded`。
-- `make kernel/kernel` 和包含临时 mmaptest 的 `make fs.img` 均成功。
+- `make kernel/kernel` 和包含 `mmaptest` 的 `make fs.img` 均成功。
 - 官方 `mmaptest` 已加入 `Makefile` 的 `UPROGS`，会随 `fs.img` 一起构建并作为评分入口。
 - `usertests` 的 `sbrkfail` 在当前 lazy/COW 基线上也会因资源压力失败，因此不能标记为整体通过；mmap 专项测试全部通过。
