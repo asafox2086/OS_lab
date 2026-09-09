@@ -50,9 +50,17 @@
 - `freeproc()` 和 `exit()` 清理 VMA，防止物理页、文件引用和共享数据泄漏。
 - `fork()` 复制 VMA 描述，并对每个映射文件调用 `filedup()`；子进程的 mmap 页面在缺页时重新从文件加载，不额外共享物理页。
 
+### `kernel/exec.c`
+
+修改函数：`exec()`。提交新用户地址空间前调用 `mmapexit()`，释放旧程序遗留的映射、物理页和文件引用。
+
 ### `kernel/defs.h`
 
 增加上述 mmap 内核辅助函数的声明。
+
+### `user/ulib.c`
+
+新增函数：`memcmp()`，用于官方 `mmaptest` 比较两个映射文件的内容。
 
 ## 二、改后的算法和注意事项
 
@@ -95,4 +103,5 @@ mmap()
 
 - `mmaptest`：`mmap_test OK`、`fork_test OK`、`mmaptest: all tests succeeded`。
 - `make kernel/kernel` 和包含临时 mmaptest 的 `make fs.img` 均成功。
-- `usertests` 在已有 lazy allocation 的 `sbrkfail` 测试处失败；该失败发生在本实验改动之外，`mmaptest` 全部通过。
+- 官方 `mmaptest` 已加入 `Makefile` 的 `UPROGS`，会随 `fs.img` 一起构建并作为评分入口。
+- `usertests` 的 `sbrkfail` 在当前 lazy/COW 基线上也会因资源压力失败，因此不能标记为整体通过；mmap 专项测试全部通过。

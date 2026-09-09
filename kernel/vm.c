@@ -115,6 +115,11 @@ walkaddr(pagetable_t pagetable, uint64 va)
 
   pte = walk(pagetable, va, 0);
   if(pte == 0 || (*pte & PTE_V) == 0){
+    struct proc *p = myproc();
+    for(int i = 0; i < 16; i++)
+      if(p->vmas[i].used && va >= p->vmas[i].addr &&
+         va < p->vmas[i].addr + p->vmas[i].length)
+        return 0;
     if(lazyalloc(va) < 0)
       return 0;
     pte = walk(pagetable, va, 0);
@@ -557,6 +562,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
       if(pte && (*pte & PTE_COW) && cowalloc(pagetable, va0) < 0)
         return -1;
     }
+    pte_t *pte = walk(pagetable, va0, 0);
+    if((pte == 0 || (*pte & PTE_V) == 0) && mmapalloc(dstva, 15) < 0)
+      return -1;
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -583,6 +591,9 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
+    pte_t *pte = walk(pagetable, va0, 0);
+    if((pte == 0 || (*pte & PTE_V) == 0) && mmapalloc(srcva, 13) < 0)
+      return -1;
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

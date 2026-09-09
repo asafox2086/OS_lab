@@ -12,6 +12,7 @@ static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uin
 int
 exec(char *path, char **argv)
 {
+  //my code begin
   char *s, *last;
   int i, off;
   uint64 argc, sz, sp, ustack[MAXARG+1], stackbase;
@@ -107,6 +108,7 @@ exec(char *path, char **argv)
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
+  mmapexit(p);
   p->pagetable = pagetable;
   p->sz = sz;
   p->tf->epc = elf.entry;  // initial program counter = main
@@ -122,6 +124,7 @@ exec(char *path, char **argv)
     end_op(ROOTDEV);
   }
   return -1;
+  //my code end
 }
 
 // Load a program segment into pagetable at virtual address va.
