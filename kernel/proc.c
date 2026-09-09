@@ -132,6 +132,8 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  //my code begin
+  mmapexit(p);
   if(p->tf)
     kfree((void*)p->tf);
   p->tf = 0;
@@ -146,6 +148,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  //my code end
 }
 
 // Create a page table for a given process,
@@ -246,6 +249,7 @@ growproc(int n)
 int
 fork(void)
 {
+  //my code begin
   int i, pid;
   struct proc *np;
   struct proc *p = myproc();
@@ -277,6 +281,12 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  for(i = 0; i < 16; i++){
+    np->vmas[i] = p->vmas[i];
+    if(np->vmas[i].used)
+      np->vmas[i].file = filedup(np->vmas[i].file);
+  }
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -286,6 +296,7 @@ fork(void)
   release(&np->lock);
 
   return pid;
+  //my code end
 }
 
 // Pass p's abandoned children to init.
@@ -320,10 +331,13 @@ reparent(struct proc *p)
 void
 exit(int status)
 {
+  //my code begin
   struct proc *p = myproc();
 
   if(p == initproc)
     panic("init exiting");
+
+  mmapexit(p);
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
@@ -378,6 +392,7 @@ exit(int status)
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
+  //my code end
 }
 
 // Wait for a child process to exit and return its pid.

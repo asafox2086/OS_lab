@@ -107,6 +107,8 @@ extern uint64 sys_uptime(void);
 extern uint64 sys_ntas(void);
 extern uint64 sys_crash(void);
 extern uint64 sys_symlink(void);
+extern uint64 sys_mmap(void);
+extern uint64 sys_munmap(void);
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -133,6 +135,8 @@ static uint64 (*syscalls[])(void) = {
 [SYS_ntas]    sys_ntas,
 [SYS_crash]   sys_crash,
 [SYS_symlink] sys_symlink,
+[SYS_mmap]    sys_mmap,
+[SYS_munmap]  sys_munmap,
 };
 
 void

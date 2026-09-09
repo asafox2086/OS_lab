@@ -28,6 +28,8 @@ int crash(const char*, int);
 int mount(char*, char *);
 int umount(char*);
 int symlink(const char*, const char*);
+void *mmap(void*, uint, int, int, int, uint);
+int munmap(void*, uint);
 
 // ulib.c
 int stat(const char*, struct stat*);

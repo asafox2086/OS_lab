@@ -41,3 +41,5 @@ entry("crash");
 entry("mount");
 entry("umount");
 entry("symlink");
+entry("mmap");
+entry("munmap");

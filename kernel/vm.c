@@ -4,9 +4,12 @@
 #include "elf.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "defs.h"
 #include "fs.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -177,6 +180,113 @@ lazyalloc(uint64 va)
     return -1;
   }
   return 0;
+  //my code end
+}
+
+int
+mmapalloc(uint64 va, int scause)
+{
+  //my code begin
+  struct proc *p = myproc();
+  struct vma *v = 0;
+  uint64 a = PGROUNDDOWN(va);
+  char *mem;
+  uint n;
+  uint64 off;
+  int perm = PTE_U;
+
+  for(int i = 0; i < 16; i++)
+    if(p->vmas[i].used && va >= p->vmas[i].addr &&
+       va < p->vmas[i].addr + p->vmas[i].length)
+      v = &p->vmas[i];
+  if(v == 0 || (scause == 13 && !(v->prot & PROT_READ)) ||
+     (scause == 15 && !(v->prot & PROT_WRITE)))
+    return -1;
+  if((mem = kalloc()) == 0)
+    return -1;
+  memset(mem, 0, PGSIZE);
+  off = v->offset + a - v->addr;
+  ilock(v->file->ip);
+  n = 0;
+  if(off < v->file->ip->size)
+    n = v->file->ip->size - off < PGSIZE ? v->file->ip->size - off : PGSIZE;
+  if(n && readi(v->file->ip, 0, (uint64)mem, off, n) != n){
+    iunlock(v->file->ip);
+    kfree(mem);
+    return -1;
+  }
+  iunlock(v->file->ip);
+  if(v->prot & PROT_READ)
+    perm |= PTE_R;
+  if(v->prot & PROT_WRITE)
+    perm |= PTE_W;
+  if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, perm) < 0){
+    kfree(mem);
+    return -1;
+  }
+  return 0;
+  //my code end
+}
+
+static void
+mmapunmap_page(struct proc *p, struct vma *v, uint64 va)
+{
+  //my code begin
+  pte_t *pte = walk(p->pagetable, va, 0);
+  if(pte == 0 || (*pte & PTE_V) == 0)
+    return;
+  if(v->flags == MAP_SHARED){
+    uint64 off = v->offset + va - v->addr;
+    uint n = 0;
+    begin_op(v->file->ip->dev);
+    ilock(v->file->ip);
+    if(off < v->file->ip->size)
+      n = v->file->ip->size - off < PGSIZE ? v->file->ip->size - off : PGSIZE;
+    if(n){
+      writei(v->file->ip, 0, PTE2PA(*pte), off, n);
+    }
+    iunlock(v->file->ip);
+    end_op(v->file->ip->dev);
+  }
+  uvmunmap(p->pagetable, va, PGSIZE, 1);
+  //my code end
+}
+
+int
+mmapunmap(struct proc *p, uint64 addr, uint64 length)
+{
+  //my code begin
+  for(int i = 0; i < 16; i++){
+    struct vma *v = &p->vmas[i];
+    if(!v->used || addr < v->addr || addr + length > v->addr + v->length)
+      continue;
+    if(addr != v->addr && addr + length != v->addr + v->length)
+      return -1;
+    for(uint64 va = PGROUNDDOWN(addr); va < addr + length; va += PGSIZE)
+      mmapunmap_page(p, v, va);
+    if(addr == v->addr && length == v->length){
+      fileclose(v->file);
+      memset(v, 0, sizeof(*v));
+    } else if(addr == v->addr){
+      v->addr += length;
+      v->length -= length;
+      v->offset += length;
+    } else {
+      v->length -= length;
+    }
+    return 0;
+  }
+  return -1;
+  //my code end
+}
+
+void
+mmapexit(struct proc *p)
+{
+  //my code begin
+  for(int i = 0; i < 16; i++)
+    if(p->vmas[i].used)
+      mmapunmap(p, p->vmas[i].addr, p->vmas[i].length);
   //my code end
 }
 
