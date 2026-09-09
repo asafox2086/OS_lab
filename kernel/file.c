@@ -28,6 +28,7 @@ fileinit(void)
 struct file*
 filealloc(void)
 {
+  //my code begin
   struct file *f;
 
   f = bd_malloc(sizeof(*f));
@@ -41,6 +42,7 @@ filealloc(void)
   release(&ftable.lock);
 
   return f;
+  //my code end
 }
 
 // Increment ref count for file f.
@@ -59,6 +61,7 @@ filedup(struct file *f)
 void
 fileclose(struct file *f)
 {
+  //my code begin
   int type;
   int writable;
   int dev;
@@ -91,6 +94,7 @@ fileclose(struct file *f)
   }
 
   bd_free(f);
+  //my code end
 }
 
 // Get metadata about file f.
@@ -190,4 +194,3 @@ filewrite(struct file *f, uint64 addr, int n)
 
   return ret;
 }
-

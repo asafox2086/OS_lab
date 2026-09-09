@@ -59,14 +59,18 @@ void bit_clear(char *array, int index) {
 
 // Flip bit at position index in array
 void bit_flip(char *array, int index) {
+  //my code begin
   char m = (1 << (index % 8));
   array[index/8] ^= m;
+  //my code end
 }
 
 // Return the index of the bit that tracks a pair of buddy blocks.
 int
 pair_index(int bi) {
+  //my code begin
   return bi / 2;
+  //my code end
 }
 
 // Print a bit vector as a list of ranges of 1 bits
@@ -93,6 +97,7 @@ bd_print_vector(char *vector, int len) {
 // Print buddy's data structures
 void
 bd_print() {
+  //my code begin
   for (int k = 0; k < nsizes; k++) {
     printf("size %d (blksz %d nblk %d): free list: ", k, BLK_SIZE(k), NBLK(k));
     lst_print(&bd_sizes[k].free);
@@ -103,6 +108,7 @@ bd_print() {
       bd_print_vector(bd_sizes[k].split, NBLK(k));
     }
   }
+  //my code end
 }
 
 // What is the first k such that 2^k >= n?
@@ -135,6 +141,7 @@ void *addr(int k, int bi) {
 void *
 bd_malloc(uint64 nbytes)
 {
+  //my code begin
   int fk, k;
 
   acquire(&lock);
@@ -164,23 +171,27 @@ bd_malloc(uint64 nbytes)
   release(&lock);
 
   return p;
+  //my code end
 }
 
 // Find the size of the block that p points to.
 int
 size(char *p) {
+  //my code begin
   for (int k = 0; k < MAXSIZE; k++) {
     if(bit_isset(bd_sizes[k+1].split, blk_index(k+1, p))) {
       return k;
     }
   }
   return 0;
+  //my code end
 }
 
 // Free memory pointed to by p, which was earlier allocated using
 // bd_malloc.
 void
 bd_free(void *p) {
+  //my code begin
   void *q;
   int k;
 
@@ -206,6 +217,7 @@ bd_free(void *p) {
   }
   lst_push(&bd_sizes[k].free, p);
   release(&lock);
+  //my code end
 }
 
 // Compute the first block at size k that doesn't contain p
@@ -231,6 +243,7 @@ log2(uint64 n) {
 void
 bd_mark(void *start, void *stop)
 {
+  //my code begin
   int bi, bj;
 
   if (((uint64) start % LEAF_SIZE != 0) || ((uint64) stop % LEAF_SIZE != 0))
@@ -247,12 +260,14 @@ bd_mark(void *start, void *stop)
       bit_flip(bd_sizes[k].alloc, pair_index(bi));
     }
   }
+  //my code end
 }
 
 // If a block is marked as allocated and the buddy is free, put the
 // buddy on the free list at size k.
 int
 bd_initfree_pair(int k, int bi, int free_bi) {
+  //my code begin
   int buddy = (bi % 2 == 0) ? bi+1 : bi-1;
   int free = 0;
   if(bi < 0 || bi >= NBLK(k) || buddy < 0 || buddy >= NBLK(k) ||
@@ -264,6 +279,7 @@ bd_initfree_pair(int k, int bi, int free_bi) {
     lst_push(&bd_sizes[k].free, addr(k, free_bi));   // put the free buddy on free list
   }
   return free;
+  //my code end
 }
   
 // Initialize the free lists for each size k.  For each size k, there
@@ -271,6 +287,7 @@ bd_initfree_pair(int k, int bi, int free_bi) {
 // bd_left and bd_right.
 int
 bd_initfree(void *bd_left, void *bd_right) {
+  //my code begin
   int free = 0;
 
   for (int k = 0; k < MAXSIZE; k++) {   // skip max size
@@ -283,6 +300,7 @@ bd_initfree(void *bd_left, void *bd_right) {
     free += bd_initfree_pair(k, right, right_buddy);
   }
   return free;
+  //my code end
 }
 
 // Mark the range [bd_base,p) as allocated
@@ -310,6 +328,7 @@ bd_mark_unavailable(void *end, void *left) {
 // Initialize the buddy allocator: it manages memory from [base, end).
 void
 bd_init(void *base, void *end) {
+  //my code begin
   char *p = (char *) ROUNDUP((uint64)base, LEAF_SIZE);
   int sz;
 
@@ -366,5 +385,5 @@ bd_init(void *base, void *end) {
     printf("free %d %d\n", free, BLK_SIZE(MAXSIZE)-meta-unavailable);
     panic("bd_init: free mem");
   }
+  //my code end
 }
-

@@ -103,6 +103,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 uint64
 walkaddr(pagetable_t pagetable, uint64 va)
 {
+  //my code begin
   pte_t *pte;
   uint64 pa;
 
@@ -123,6 +124,7 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
   pa = PTE2PA(*pte);
   return pa;
+  //my code end
 }
 
 // add a mapping to the kernel page table.
@@ -158,6 +160,7 @@ kvmpa(uint64 va)
 int
 lazyalloc(uint64 va)
 {
+  //my code begin
   char *mem;
   struct proc *p = myproc();
   uint64 a = PGROUNDDOWN(va);
@@ -174,6 +177,38 @@ lazyalloc(uint64 va)
     return -1;
   }
   return 0;
+  //my code end
+}
+
+int
+cowalloc(pagetable_t pagetable, uint64 va)
+{
+  //my code begin
+  pte_t *pte;
+  uint64 pa;
+  uint flags;
+  char *mem;
+
+  va = PGROUNDDOWN(va);
+  if(va >= MAXVA || (pte = walk(pagetable, va, 0)) == 0 ||
+     (*pte & PTE_V) == 0 || (*pte & PTE_COW) == 0 || (*pte & PTE_U) == 0)
+    return -1;
+
+  pa = PTE2PA(*pte);
+  if(krefcnt((void*)pa) == 1){
+    *pte = (*pte | PTE_W) & ~PTE_COW;
+    return 0;
+  }
+
+  if((mem = kalloc()) == 0)
+    return -1;
+  memmove(mem, (char*)pa, PGSIZE);
+  flags = PTE_FLAGS(*pte);
+  flags = (flags | PTE_W) & ~PTE_COW;
+  *pte = PA2PTE(mem) | flags | PTE_V;
+  kfree((void*)pa);
+  return 0;
+  //my code end
 }
 
 // Create PTEs for virtual addresses starting at va that refer to
@@ -208,6 +243,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
 {
+  //my code begin
   uint64 a, last;
   pte_t *pte;
   uint64 pa;
@@ -239,6 +275,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
     a += PGSIZE;
     pa += PGSIZE;
   }
+  //my code end
 }
 
 // create an empty user page table.
@@ -353,10 +390,10 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
+  //my code begin
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -365,19 +402,20 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+    if(flags & PTE_W)
+      flags = (flags | PTE_COW) & ~PTE_W;
+    if(mappages(new, i, PGSIZE, pa, flags) != 0)
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
-    }
+    if(PTE_FLAGS(*pte) & PTE_W)
+      *pte = (*pte | PTE_COW) & ~PTE_W;
+    krefinc((void*)pa);
   }
   return 0;
 
  err:
   uvmunmap(new, 0, i, 1);
   return -1;
+  //my code end
 }
 
 // mark a PTE invalid for user access.
@@ -399,10 +437,16 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
+  //my code begin
   uint64 n, va0, pa0;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    if(va0 < MAXVA){
+      pte_t *pte = walk(pagetable, va0, 0);
+      if(pte && (*pte & PTE_COW) && cowalloc(pagetable, va0) < 0)
+        return -1;
+    }
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
@@ -416,6 +460,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     dstva = va0 + PGSIZE;
   }
   return 0;
+  //my code end
 }
 
 // Copy from user to kernel.

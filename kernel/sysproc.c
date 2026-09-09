@@ -41,6 +41,7 @@ sys_wait(void)
 uint64
 sys_sbrk(void)
 {
+  //my code begin
   int addr;
   int n;
   struct proc *p = myproc();
@@ -55,6 +56,7 @@ sys_sbrk(void)
     p->sz += n;
   }
   return addr;
+  //my code end
 }
 
 uint64

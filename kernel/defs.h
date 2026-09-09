@@ -61,6 +61,8 @@ void            ramdiskrw(struct buf*);
 // kalloc.c
 void*           kalloc(void);
 void            kfree(void *);
+void            krefinc(void *);
+int             krefcnt(void *);
 void            kinit();
 
 // log.c
@@ -160,6 +162,7 @@ uint64          kvmpa(uint64);
 void            kvmmap(uint64, uint64, uint64, int);
 int             mappages(pagetable_t, uint64, uint64, uint64, int);
 int             lazyalloc(uint64);
+int             cowalloc(pagetable_t, uint64);
 pagetable_t     uvmcreate(void);
 void            uvminit(pagetable_t, uchar *, uint);
 uint64          uvmalloc(pagetable_t, uint64, uint64);
