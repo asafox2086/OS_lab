@@ -1,473 +1,96 @@
-# xv6 Lab 3：Buddy Allocator 与 Lazy Allocation
+# xv6 Lab 3 实验记录
 
-本次实验主要完成两部分：
-
-1. 使用 buddy allocator 动态分配 `struct file`，不再受 `NFILE` 固定数组限制。
-2. 实现用户内存的 lazy allocation，即 `sbrk()` 只增加进程地址空间大小，真正访问页面时才分配物理页。
-
-代码修改遵循最少改动原则：只修改实验要求涉及的功能，尽量复用 xv6 原有的函数、数据结构和执行流程，不添加无关功能或重构。
+本次实现遵循最少改动原则：只修改实验要求涉及的函数，保留 xv6 原有的调用流程和数据结构，不增加无关功能。
 
 ## 一、改了哪里
 
-### 1. 动态分配文件结构体
+### `kernel/file.c`
 
-原来的 xv6 使用固定数组：
+修改函数：`filealloc()`、`fileclose()`。
 
-```c
-struct {
-  struct spinlock lock;
-  struct file file[NFILE];
-} ftable;
-```
+- 删除 `ftable.file[NFILE]`，文件结构体不再受 `NFILE` 限制。
+- `filealloc()` 调用 `bd_malloc(sizeof(*f))`，并用 `memset()` 清零。因为 `bd_malloc()` 返回的内存不会自动清零。
+- `fileclose()` 在引用计数降为 0 后调用 `bd_free(f)`。释放前先保存关闭文件所需的字段，并继续使用 `ftable.lock` 保护引用计数。
 
-这种方式限制了系统中同时存在的文件结构体数量。
+### `kernel/buddy.c`
 
-修改后只保留锁：
+修改函数：`bd_malloc()`、`bd_free()`、`bd_mark()`、`bd_initfree_pair()`、`bd_initfree()`、`bd_init()`、`bd_print()`；新增 `bit_flip()`、`pair_index()`。
 
-```c
-struct {
-  struct spinlock lock;
-} ftable;
-```
+- `alloc` 位图从“每个块一个 bit”改为“每对 buddy 一个 bit”。该 bit 表示两个块是否只有一个空闲，即 `B1_is_free XOR B2_is_free`。
+- 分配和释放块时翻转对应 pair 的 bit；释放时若翻转前该 bit 为 1，则两个 buddy 合并。
+- metadata 和不可用内存仍标记为已占用，初始化时跳过越界的 buddy pair，保证非 2 的幂大小的物理内存也能工作。
+- 位图大小和 `bd_print()` 的长度改为按 pair 数量计算。
 
-`filealloc()` 使用 buddy allocator 分配文件结构体：
+### `kernel/kalloc.c`
 
-```c
-struct file*
-filealloc(void)
-{
-  struct file *f;
+修改函数：`kinit()`、`kalloc()`、`kfree()`。
 
-  f = bd_malloc(sizeof(*f));
-  if(f == 0)
-    return 0;
+- `kinit()` 使用 `bd_init()` 初始化物理内存。
+- `kalloc()` 和 `kfree()` 分别转调 `bd_malloc(PGSIZE)` 与 `bd_free()`，让页表页、用户页、内核栈和文件结构体使用同一个 buddy allocator。
 
-  memset(f, 0, sizeof(*f));
+### `kernel/sysproc.c`
 
-  acquire(&ftable.lock);
-  f->ref = 1;
-  release(&ftable.lock);
+修改函数：`sys_sbrk()`。
 
-  return f;
-}
-```
+- `sbrk(n)` 为正数时只增加 `p->sz` 并返回旧地址，不立即分配物理页。
+- `sbrk(n)` 为负数时保留原来的 `growproc(n)` 路径，以释放缩小范围内已经存在的页面。
 
-由于 `bd_malloc()` 不会自动清零返回的内存，所以需要使用 `memset()` 初始化。
+### `kernel/trap.c`
 
-关闭文件时，如果引用计数降为 0，完成管道或 inode 的释放后，再释放文件结构体：
+修改函数：`usertrap()`。
 
-```c
-bd_free(f);
-```
+- 判断 `r_scause()` 是否为 13（load page fault）或 15（store/AMO page fault）。
+- 对这两类异常调用 `lazyalloc(r_stval())`；地址非法、分配失败或映射失败时保持原有的杀死进程路径。
 
-调用流程如下：
+### `kernel/vm.c`
 
-```text
-open()/pipe()
-    |
-    v
-filealloc()
-    |
-    v
-bd_malloc(sizeof(struct file))
-    |
-    v
-buddy allocator 分配内存
-```
+修改函数：`walkaddr()`、`uvmunmap()`、`uvmcopy()`；新增 `lazyalloc()`。
 
-### 2. Buddy allocator 的位图优化
+- `lazyalloc()` 检查错误地址是否低于 `p->sz` 且不在用户栈底部以下，然后调用 `kalloc()`、清零页面并用 `mappages()` 建立用户页映射。
+- `walkaddr()` 在系统调用访问尚未映射的合法 lazy page 时触发 `lazyalloc()`，支持 `read()`、`write()` 等内核到用户地址的复制。
+- `uvmunmap()` 跳过不存在或无效的 PTE，避免释放进程时因 lazy page 从未映射而 panic。
+- `uvmcopy()` 在 `fork()` 时跳过父进程尚未映射的页面；子进程以后访问该地址时再独立分配页面。
 
-原来的 `alloc` 位图为每个 block 保存一个 bit。优化后，每一对 buddy block 只使用一个 bit：
+### `kernel/defs.h`
 
-```c
-#define NPAIR(k) ((NBLK(k)+1)/2)
-```
+修改内容：增加 `lazyalloc()` 的函数声明，使 `trap.c` 和 `vm.c` 可以调用它。
 
-这个 bit 表示：
+## 二、改之后的算法和注意事项
+
+### 1. Buddy allocator 算法
+
+初始化时，`bd_init()` 从物理内存中划出 metadata、`alloc` 位图和 `split` 位图，并将这些区域及物理内存范围之外的部分标记为已占用。剩余区域按大小加入 free list。
+
+分配时，`bd_malloc()` 找到能够容纳请求的最小 block；如果只有更大的 block，就不断二分，把另一半放入更小一级的 free list，并翻转对应 buddy pair 的 XOR bit。释放时，`bd_free()` 翻转 XOR bit；如果另一个 buddy 空闲，就从 free list 移除它并向上合并，否则将当前 block 放回 free list。锁保证并发分配和释放不会同时修改 allocator 状态。
+
+### 2. Lazy allocation 算法
+
+`sbrk(8192)` 只把进程大小从 `oldsz` 改为 `oldsz + 8192`，不分配物理页。用户第一次访问其中某一页时，硬件产生 page fault，`usertrap()` 取得 `r_stval()`，调用 `lazyalloc()`。该函数将地址用 `PGROUNDDOWN()` 对齐，检查堆边界和栈边界，使用 `kalloc()` 分配并清零一个物理页，再用 `mappages()` 建立映射；返回用户态后，CPU 重新执行原指令。
+
+因此完整路径是：
 
 ```text
-B1_is_free XOR B2_is_free
+sbrk()
+  -> 只增加 p->sz
+用户访问未映射页
+  -> page fault
+  -> usertrap()
+  -> lazyalloc()
+  -> kalloc()
+  -> buddy allocator
+  -> mappages()
+  -> 重新执行原指令
 ```
 
-状态如下：
-
-| B1 | B2 | XOR |
-|---|---|---|
-| 已分配 | 已分配 | 0 |
-| 空闲 | 空闲 | 0 |
-| 已分配 | 空闲 | 1 |
-| 空闲 | 已分配 | 1 |
-
-为了切换 bit，新增：
-
-```c
-void
-bit_flip(char *array, int index)
-{
-  char m = (1 << (index % 8));
-  array[index/8] ^= m;
-}
-```
-
-块编号通过以下函数转换为 buddy pair 编号：
-
-```c
-int
-pair_index(int bi)
-{
-  return bi / 2;
-}
-```
-
-分配或释放一个 block 时，翻转对应 pair 的 bit。
-
-释放时：
-
-```c
-int pi = pair_index(bi);
-int merge = bit_isset(bd_sizes[k].alloc, pi);
-bit_flip(bd_sizes[k].alloc, pi);
-```
-
-如果释放前 `merge == 1`，说明另一个 buddy 是空闲的，因此两个 block 可以合并；如果 `merge == 0`，则不能合并。
-
-这样可以将 `alloc` 位图的空间开销减少一半。
-
-### 3. `sys_sbrk()` 的修改
-
-原来的 `sbrk()` 会调用 `growproc(n)`，立即分配物理页：
-
-```c
-addr = myproc()->sz;
-if(growproc(n) < 0)
-  return -1;
-return addr;
-```
-
-lazy allocation 中，正数参数只增加进程的 `sz`：
-
-```c
-uint64
-sys_sbrk(void)
-{
-  int addr;
-  int n;
-  struct proc *p = myproc();
-
-  if(argint(0, &n) < 0)
-    return -1;
-
-  addr = p->sz;
-
-  if(n < 0){
-    if(growproc(n) < 0)
-      return -1;
-  } else {
-    p->sz += n;
-  }
-
-  return addr;
-}
-```
-
-例如：
-
-```c
-char *p = sbrk(4096);
-```
-
-执行后只会增加：
-
-```text
-p->sz += 4096
-```
-
-此时页表中还没有对应的物理页。
-
-负数参数仍然调用 `growproc(n)`，用于释放缩小后的地址空间。
-
-## 二、改之后的算法是什么
-
-### 1. 用户态 page fault 的处理
-
-RISC-V 中常见的用户页面错误原因是：
-
-```text
-13：load page fault
-15：store/AMO page fault
-```
-
-在 `usertrap()` 中，如果发现 `scause` 是 13 或 15，就调用：
-
-```c
-lazyalloc(r_stval())
-```
-
-`r_stval()` 返回发生错误的虚拟地址。
-
-例如：
-
-```text
-stval = 0x4008
-```
-
-页大小为 4096 字节，因此实际映射的页面起始地址是：
-
-```c
-PGROUNDDOWN(0x4008) = 0x4000
-```
-
-### 2. `lazyalloc()` 的实现过程
-
-核心函数如下：
-
-```c
-int
-lazyalloc(uint64 va)
-{
-  char *mem;
-  struct proc *p = myproc();
-  uint64 a = PGROUNDDOWN(va);
-
-  if(p == 0 || va >= p->sz || va < PGROUNDDOWN(p->tf->sp))
-    return -1;
-
-  mem = kalloc();
-  if(mem == 0)
-    return -1;
-
-  memset(mem, 0, PGSIZE);
-
-  if(mappages(p->pagetable, a, PGSIZE, (uint64)mem,
-              PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-    kfree(mem);
-    return -1;
-  }
-
-  return 0;
-}
-```
-
-执行步骤：
-
-1. 检查进程是否存在。
-2. 检查错误地址是否小于 `p->sz`。
-3. 检查错误地址是否位于用户栈底部以下。
-4. 使用 `kalloc()` 分配一个物理页。
-5. 将物理页清零。
-6. 使用 `mappages()` 建立虚拟地址到物理地址的映射。
-7. 返回用户态，重新执行导致 page fault 的指令。
-
-由于当前 `kalloc()` 内部调用 buddy allocator：
-
-```c
-void*
-kalloc(void)
-{
-  return bd_malloc(PGSIZE);
-}
-```
-
-所以 lazy allocation 的实际分配路径是：
-
-```text
-lazyalloc()
-    |
-    v
-kalloc()
-    |
-    v
-bd_malloc(PGSIZE)
-    |
-    v
-buddy allocator 分配一个物理页
-```
-
-### 3. `echo hi` 的执行过程
-
-执行：
-
-```text
-$ echo hi
-```
-
-用户程序在运行过程中会访问堆空间。由于 `sbrk()` 只修改了 `p->sz`，并没有建立页表映射，因此第一次访问未映射地址时会发生 page fault：
-
-```text
-用户访问虚拟地址
-        |
-        v
-页表中没有映射
-        |
-        v
-RISC-V 产生 page fault
-        |
-        v
-进入 usertrap()
-        |
-        v
-调用 lazyalloc(r_stval())
-        |
-        v
-kalloc() 分配物理页
-        |
-        v
-mappages() 建立映射
-        |
-        v
-返回用户态
-        |
-        v
-重新执行原来的指令
-```
-
-这就是延迟分配：只有真正访问到的页面才占用物理内存。
-
-### 4. 系统调用访问 lazy page
-
-用户程序可能将尚未实际分配的地址传给系统调用：
-
-```c
-char *p = sbrk(4096);
-write(fd, p, 10);
-```
-
-内核执行 `copyin()` 或 `copyout()` 时会调用 `walkaddr()`。如果页面还没有映射，就需要分配：
-
-```c
-pte = walk(pagetable, va, 0);
-if(pte == 0 || (*pte & PTE_V) == 0){
-  if(lazyalloc(va) < 0)
-    return 0;
-  pte = walk(pagetable, va, 0);
-}
-```
-
-执行流程：
-
-```text
-write()
-    |
-    v
-copyin()
-    |
-    v
-walkaddr()
-    |
-    v
-发现页面未映射
-    |
-    v
-lazyalloc()
-    |
-    v
-重新获取物理地址
-    |
-    v
-完成数据复制
-```
-
-### 5. `uvmunmap()` 的修改
-
-lazy allocation 下，进程的地址空间范围内可能存在从未访问过的页面。这些页面没有实际的物理映射。
-
-因此 `uvmunmap()` 遇到以下情况时不能 panic：
-
-```text
-页表项不存在
-页表项无效
-```
-
-应该跳过这些页面，只释放实际存在的映射。
-
-否则进程退出时可能出现：
-
-```text
-panic: uvmunmap: not mapped
-```
-
-### 6. `uvmcopy()` 的修改
-
-`fork()` 会调用 `uvmcopy()`。父进程的 lazy page 可能尚未映射，因此不能再假设每一页都存在：
-
-```c
-if((pte = walk(old, i, 0)) == 0)
-  continue;
-if((*pte & PTE_V) == 0)
-  continue;
-```
-
-父进程和子进程都可以暂时没有这页的物理映射。以后哪个进程访问该地址，哪个进程就通过 page fault 分配自己的物理页。
-
-### 7. 一个完整例子
-
-用户程序执行：
-
-```c
-char *p = sbrk(8192);
-p[0] = 'a';
-p[4096] = 'b';
-```
-
-执行过程：
-
-```text
-1. sbrk(8192)
-   p->sz 增加 8192
-   不分配物理页
-
-2. p[0] = 'a'
-   第一页未映射
-   触发 page fault
-   lazyalloc() 分配并映射一页
-   指令重新执行并成功
-
-3. p[4096] = 'b'
-   第二页未映射
-   再次触发 page fault
-   lazyalloc() 分配并映射一页
-   指令重新执行并成功
-```
-
-最终只为真正访问过的页面分配物理内存。
-
-### 8. 编译和测试
-
-进入 xv6 目录：
-
-```bash
-cd /headless/xv6-riscv
-```
-
-编译：
-
-```bash
-make
-```
-
-启动 xv6：
-
-```bash
-make qemu
-```
-
-进入 xv6 shell 后运行：
-
-```text
-$ lazytests
-$ usertests
-```
-
-如果 `usertests` 提示已经运行过，需要退出 QEMU，删除并重建文件系统镜像：
-
-```bash
-rm fs.img
-make qemu
-```
-
-预期结果：
-
-```text
-lazytests: ALL TESTS PASSED
-usertests: ALL TESTS PASSED
-```
+### 3. 实验文档注意事项的处理
+
+- `bd_malloc()` 不清零：`filealloc()` 显式调用 `memset()`；`lazyalloc()` 也将新物理页清零。
+- `sbrk()` 负数：仍调用 `growproc()`，由 `uvmdealloc()` 和修改后的 `uvmunmap()` 释放已有映射，并跳过从未分配的页面。
+- page fault 地址超过 `sbrk()` 范围：`lazyalloc()` 检查 `va >= p->sz`，失败后进程沿原异常路径被杀死。
+- 栈底以下的非法地址：`lazyalloc()` 检查 `va < PGROUNDDOWN(p->tf->sp)`，拒绝访问栈底以下地址。
+- `fork()`：`uvmcopy()` 对未映射页面直接跳过，避免把 lazy page 当成已存在的物理页复制。
+- 系统调用访问 lazy page：`walkaddr()` 发现合法地址没有映射时调用 `lazyalloc()`，因此 `copyin()`、`copyout()` 可以继续工作。
+- 内存耗尽：`lazyalloc()` 在 `kalloc()` 失败时返回错误，`usertrap()` 不接受该异常并杀死当前进程。
+- `uvmunmap()` 崩溃：对不存在的页表项和无效 PTE 直接跳过，只释放真实存在的叶子映射。
+
+最终，buddy allocator 负责底层物理内存分配，lazy allocation 负责推迟用户页的实际分配；只有真正访问的用户页才占用物理内存。已用 `lazytests`、`usertests` 验证该流程。
