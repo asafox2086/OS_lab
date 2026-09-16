@@ -23,7 +23,7 @@
 #include "fs.h"
 #include "buf.h"
 
-#define NBUCKET 13
+#define NBUCKET 53
 
 struct bucket {
   struct spinlock lock;
@@ -190,4 +190,3 @@ bunpin(struct buf *b) {
   release(&bcache.bucket[index].lock); // 释放所属桶锁
   //my code end
 }
-
