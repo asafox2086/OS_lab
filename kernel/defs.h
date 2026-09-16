@@ -1,6 +1,8 @@
 struct buf;
 struct context;
 struct file;
+struct mbuf;
+struct sock;
 struct inode;
 struct pipe;
 struct proc;
@@ -21,6 +23,26 @@ void            bunpin(struct buf*);
 void            consoleinit(void);
 void            consoleintr(int);
 void            consputc(int);
+
+// pci.c
+void            pci_init(void);
+
+// e1000.c
+void            e1000_init(uint32 *);
+void            e1000_intr(void);
+int             e1000_transmit(struct mbuf *);
+
+// net.c
+void            net_rx(struct mbuf *);
+void            net_tx_udp(struct mbuf *, uint32, uint16, uint16);
+
+// sysnet.c
+void            sockinit(void);
+int             sockalloc(struct file **, uint32, uint16, uint16);
+void            sockclose(struct sock *);
+int             sockread(struct sock *, uint64, int);
+int             sockwrite(struct sock *, uint64, int);
+void            sockrecvudp(struct mbuf *, uint32, uint16, uint16);
 
 // exec.c
 int             exec(char*, char**);

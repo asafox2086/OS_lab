@@ -67,6 +67,7 @@ fileclose(struct file *f)
   int dev; // 保存 inode 所在设备号
   struct pipe *pipe; // 保存管道对象指针
   struct inode *ip; // 保存 inode 指针
+  struct sock *sock; // 保存 socket 对象指针
 
   acquire(&ftable.lock); // 保护文件对象引用计数
   if(f->ref < 1) // 引用计数非法说明重复关闭
@@ -79,6 +80,7 @@ fileclose(struct file *f)
   writable = f->writable; // 保存可写标志供解锁后使用
   pipe = f->pipe; // 保存管道指针供解锁后使用
   ip = f->ip; // 保存 inode 指针供解锁后使用
+  sock = f->sock; // 保存 socket 指针供解锁后使用
   if(type == FD_INODE || type == FD_DEVICE) // inode 和设备文件都需要设备号
     dev = ip->dev; // 记录设备号
   f->ref = 0; // 标记对象不再被引用
@@ -87,6 +89,8 @@ fileclose(struct file *f)
 
   if(type == FD_PIPE){ // 管道文件释放管道端点
     pipeclose(pipe, writable); // 关闭相应的读或写端
+  } else if(type == FD_SOCK){ // socket 文件需要释放通信状态
+    sockclose(sock); // 从 socket 表移除并回收报文队列
   } else if(type == FD_INODE || type == FD_DEVICE){ // inode 或设备文件释放 inode 引用
     begin_op(dev); // 开始文件系统日志事务
     iput(ip); // 释放 inode 引用
@@ -128,6 +132,8 @@ fileread(struct file *f, uint64 addr, int n)
 
   if(f->type == FD_PIPE){
     r = piperead(f->pipe, addr, n);
+  } else if(f->type == FD_SOCK){
+    r = sockread(f->sock, addr, n); // 从 socket 接收队列读取 UDP 负载
   } else if(f->type == FD_DEVICE){
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
       return -1;
@@ -156,6 +162,8 @@ filewrite(struct file *f, uint64 addr, int n)
 
   if(f->type == FD_PIPE){
     ret = pipewrite(f->pipe, addr, n);
+  } else if(f->type == FD_SOCK){
+    ret = sockwrite(f->sock, addr, n); // 通过 socket 封装并发送 UDP 负载
   } else if(f->type == FD_DEVICE){
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].write)
       return -1;

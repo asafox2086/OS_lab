@@ -53,6 +53,25 @@ fdalloc(struct file *f)
 }
 
 uint64
+sys_connect(void)
+{
+  //my code begin
+  struct file *f; // 保存新创建的 socket 文件对象
+  int fd; // 保存分配给 socket 的文件描述符
+  uint32 raddr, lport, rport; // 保存远端地址、本地端口和远端端口
+  if(argint(0, (int *)&raddr) < 0 || argint(1, (int *)&lport) < 0 || argint(2, (int *)&rport) < 0) // 读取连接三元组
+    return -1; // 参数读取失败时拒绝创建 socket
+  if(sockalloc(&f, raddr, lport, rport) < 0) // 分配并绑定 UDP socket
+    return -1; // 地址端口组合冲突或内存不足
+  if((fd = fdalloc(f)) < 0){ // 为 socket 分配进程文件描述符
+    fileclose(f); // 描述符耗尽时关闭并回收 socket
+    return -1; // 返回分配失败
+  }
+  return fd; // 返回可用于 read 和 write 的 socket 描述符
+  //my code end
+}
+
+uint64
 sys_dup(void)
 {
   struct file *f;

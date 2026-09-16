@@ -36,6 +36,7 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+entry("connect"); # 生成 connect 系统调用存根
 entry("ntas");
 entry("crash");
 entry("mount");

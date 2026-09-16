@@ -208,6 +208,8 @@ devintr()
       uartintr();
     } else if(irq == VIRTIO0_IRQ || irq == VIRTIO1_IRQ ){
       virtio_disk_intr(irq - VIRTIO0_IRQ);
+    } else if(irq == E1000_IRQ){
+      e1000_intr(); // 将网卡接收中断交给 E1000 驱动处理
     }
 
     plic_complete(irq);

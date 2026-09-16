@@ -32,6 +32,8 @@ main()
     iinit();         // inode cache
     fileinit();      // file table
     virtio_disk_init(minor(ROOTDEV)); // emulated hard disk
+    pci_init();       // 初始化 E1000 PCI 网卡
+    sockinit();       // 初始化 UDP socket 表
     userinit();      // first user process
     __sync_synchronize();
     started = 1;

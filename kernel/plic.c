@@ -14,6 +14,7 @@ plicinit(void)
   // set desired IRQ priorities non-zero (otherwise disabled).
   *(uint32*)(PLIC + UART0_IRQ*4) = 1;
   *(uint32*)(PLIC + VIRTIO0_IRQ*4) = 1;
+  *(uint32*)(PLIC + E1000_IRQ*4) = 1; // 允许 E1000 网卡向 PLIC 发送中断
 }
 
 void
@@ -23,6 +24,7 @@ plicinithart(void)
   
   // set uart's enable bit for this hart's S-mode. 
   *(uint32*)PLIC_SENABLE(hart)= (1 << UART0_IRQ) | (1 << VIRTIO0_IRQ);
+  *(uint32*)(PLIC_SENABLE(hart) + 4) = 1 << (E1000_IRQ - 32); // 在第二个使能位图中启用网卡中断
 
   // set this hart's S-mode priority threshold to 0.
   *(uint32*)PLIC_SPRIORITY(hart) = 0;

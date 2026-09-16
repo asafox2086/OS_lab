@@ -42,6 +42,9 @@ kvminit()
   // virtio mmio disk interface 1
   kvmmap(VIRTION(1), VIRTION(1), PGSIZE, PTE_R | PTE_W);
 
+  kvmmap(0x30000000L, 0x30000000L, 0x10000000, PTE_R | PTE_W); // 映射 PCIe 配置空间供 pci.c 枚举设备
+  kvmmap(0x40000000L, 0x40000000L, 0x20000, PTE_R | PTE_W); // 映射 E1000 的 MMIO 寄存器
+
   // CLINT
   kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 

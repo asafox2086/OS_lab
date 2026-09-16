@@ -31,3 +31,4 @@
 #define SYS_munmap 28 // munmap 系统调用号
 #define SYS_sigalarm 29 // sigalarm 系统调用号
 #define SYS_sigreturn 30 // sigreturn 系统调用号
+#define SYS_connect 31 // connect 系统调用号

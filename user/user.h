@@ -23,6 +23,7 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int connect(uint32, uint16, uint16); // 声明创建并绑定 UDP socket 的接口
 int ntas();
 int crash(const char*, int);
 int mount(char*, char *);
