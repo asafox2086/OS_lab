@@ -9,6 +9,6 @@
 #define MAXOPBLOCKS  10  // max # of blocks any FS op writes
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
-#define FSSIZE       70000 // size of file system in blocks
+#define FSSIZE       70000 // 文件系统大小（块数）
 #define MAXPATH      128   // maximum file path name
 #define NDISK        2

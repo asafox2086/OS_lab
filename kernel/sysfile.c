@@ -287,86 +287,86 @@ uint64
 sys_open(void)
 {
   //my code begin
-  char path[MAXPATH];
-  int fd, omode;
-  struct file *f;
-  struct inode *ip;
-  int n;
+  char path[MAXPATH]; // 保存用户传入的路径或符号链接目标
+  int fd, omode; // 保存分配的文件描述符和打开标志
+  struct file *f; // 保存新建的文件对象
+  struct inode *ip; // 保存目标文件的 inode
+  int n; // 保存符号链接解析层数和字符串长度
 
-  if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
-    return -1;
+  if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0) // 获取路径和打开标志
+    return -1; // 参数读取失败
 
-  begin_op(ROOTDEV);
+  begin_op(ROOTDEV); // 开始文件系统日志事务
 
-  if(omode & O_CREATE){
-    ip = create(path, T_FILE, 0, 0);
-    if(ip == 0){
-      end_op(ROOTDEV);
-      return -1;
+  if(omode & O_CREATE){ // 创建标志存在时创建普通文件
+    ip = create(path, T_FILE, 0, 0); // 创建或打开指定普通文件
+    if(ip == 0){ // 创建失败
+      end_op(ROOTDEV); // 结束日志事务
+      return -1; // 返回失败
     }
   } else {
-    if((ip = namei(path)) == 0){
-      end_op(ROOTDEV);
-      return -1;
+    if((ip = namei(path)) == 0){ // 查找路径对应的 inode
+      end_op(ROOTDEV); // 查找失败后结束日志事务
+      return -1; // 返回失败
     }
-    ilock(ip);
-    if(!(omode & O_NOFOLLOW)){
-      for(n = 0; n < 10 && ip->type == T_SYMLINK; n++){
-        if(readi(ip, 0, (uint64)path, 0, ip->size) != ip->size){
-          iunlockput(ip);
-          end_op(ROOTDEV);
-          return -1;
+    ilock(ip); // 锁定找到的 inode
+    if(!(omode & O_NOFOLLOW)){ // 未指定不跟随时解析符号链接
+      for(n = 0; n < 10 && ip->type == T_SYMLINK; n++){ // 最多跟随十层符号链接
+        if(readi(ip, 0, (uint64)path, 0, ip->size) != ip->size){ // 读取符号链接中保存的目标路径
+          iunlockput(ip); // 读取失败时解锁并释放 inode
+          end_op(ROOTDEV); // 结束日志事务
+          return -1; // 返回失败
         }
-        iunlockput(ip);
-        if((ip = namei(path)) == 0){
-          end_op(ROOTDEV);
-          return -1;
+        iunlockput(ip); // 释放当前符号链接 inode
+        if((ip = namei(path)) == 0){ // 按目标路径继续查找 inode
+          end_op(ROOTDEV); // 查找失败时结束日志事务
+          return -1; // 返回失败
         }
-        ilock(ip);
+        ilock(ip); // 锁定下一层目标 inode
       }
-      if(ip->type == T_SYMLINK){
-        iunlockput(ip);
-        end_op(ROOTDEV);
-        return -1;
+      if(ip->type == T_SYMLINK){ // 超过最大跟随层数仍是符号链接
+        iunlockput(ip); // 解锁并释放 inode
+        end_op(ROOTDEV); // 结束日志事务
+        return -1; // 拒绝可能的循环链接
       }
     }
-    if(ip->type == T_DIR && omode != O_RDONLY){
-      iunlockput(ip);
-      end_op(ROOTDEV);
-      return -1;
+    if(ip->type == T_DIR && omode != O_RDONLY){ // 目录仅允许只读打开
+      iunlockput(ip); // 释放目录 inode
+      end_op(ROOTDEV); // 结束日志事务
+      return -1; // 拒绝写目录
     }
   }
 
-  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
-    iunlockput(ip);
-    end_op(ROOTDEV);
-    return -1;
+  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){ // 检查设备主设备号有效性
+    iunlockput(ip); // 释放非法设备 inode
+    end_op(ROOTDEV); // 结束日志事务
+    return -1; // 返回失败
   }
 
-  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
-    if(f)
-      fileclose(f);
-    iunlockput(ip);
-    end_op(ROOTDEV);
-    return -1;
+  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){ // 分配文件对象和进程文件描述符
+    if(f) // 文件对象已经分配时
+      fileclose(f); // 释放文件对象
+    iunlockput(ip); // 释放 inode
+    end_op(ROOTDEV); // 结束日志事务
+    return -1; // 返回失败
   }
 
-  if(ip->type == T_DEVICE){
-    f->type = FD_DEVICE;
-    f->major = ip->major;
-    f->minor = ip->minor;
+  if(ip->type == T_DEVICE){ // 初始化设备文件对象
+    f->type = FD_DEVICE; // 设置文件类型为设备
+    f->major = ip->major; // 记录设备主号
+    f->minor = ip->minor; // 记录设备次号
   } else {
-    f->type = FD_INODE;
+    f->type = FD_INODE; // 普通文件和目录使用 inode 类型
   }
-  f->ip = ip;
-  f->off = 0;
-  f->readable = !(omode & O_WRONLY);
-  f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+  f->ip = ip; // 将 inode 绑定到文件对象
+  f->off = 0; // 新打开文件从偏移零开始
+  f->readable = !(omode & O_WRONLY); // 非只写模式允许读取
+  f->writable = (omode & O_WRONLY) || (omode & O_RDWR); // 只写或读写模式允许写入
 
-  iunlock(ip);
-  end_op(ROOTDEV);
+  iunlock(ip); // 解除 inode 锁但保留文件对象引用
+  end_op(ROOTDEV); // 结束日志事务
 
-  return fd;
+  return fd; // 返回新文件描述符
   //my code end
 }
 
@@ -374,25 +374,25 @@ uint64
 sys_symlink(void)
 {
   //my code begin
-  char target[MAXPATH], path[MAXPATH];
-  struct inode *ip;
+  char target[MAXPATH], path[MAXPATH]; // 保存链接目标和新链接路径
+  struct inode *ip; // 保存新创建的符号链接 inode
 
-  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
-    return -1;
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) // 读取目标路径与链接路径
+    return -1; // 参数读取失败
 
-  begin_op(ROOTDEV);
-  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){
-    end_op(ROOTDEV);
-    return -1;
+  begin_op(ROOTDEV); // 开始创建符号链接的日志事务
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){ // 以符号链接类型创建 inode
+    end_op(ROOTDEV); // 创建失败后结束事务
+    return -1; // 返回失败
   }
-  if(writei(ip, 0, (uint64)target, 0, strlen(target) + 1) != strlen(target) + 1){
-    iunlockput(ip);
-    end_op(ROOTDEV);
-    return -1;
+  if(writei(ip, 0, (uint64)target, 0, strlen(target) + 1) != strlen(target) + 1){ // 将带结尾零字节的目标路径写入 inode
+    iunlockput(ip); // 写入失败时释放 inode
+    end_op(ROOTDEV); // 结束日志事务
+    return -1; // 返回失败
   }
-  iunlockput(ip);
-  end_op(ROOTDEV);
-  return 0;
+  iunlockput(ip); // 写入完成后解锁并释放 inode
+  end_op(ROOTDEV); // 提交日志事务
+  return 0; // 创建符号链接成功
   //my code end
 }
 

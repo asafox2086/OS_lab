@@ -27,9 +27,9 @@ int ntas();
 int crash(const char*, int);
 int mount(char*, char *);
 int umount(char*);
-int symlink(const char*, const char*);
-void *mmap(void*, uint, int, int, int, uint);
-int munmap(void*, uint);
+int symlink(const char*, const char*); // 声明创建符号链接的用户接口
+void *mmap(void*, uint, int, int, int, uint); // 声明文件内存映射用户接口
+int munmap(void*, uint); // 声明解除文件内存映射用户接口
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -45,5 +45,5 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
-int memcmp(const void *, const void *, uint);
-void *memcpy(void *, const void *, uint);
+int memcmp(const void *, const void *, uint); // 声明内存比较函数
+void *memcpy(void *, const void *, uint); // 声明内存复制函数

@@ -20,7 +20,7 @@ static int
 refindex(void *pa)
 {
   //my code begin
-  return ((uint64)pa - KERNBASE) / PGSIZE;
+  return ((uint64)pa - KERNBASE) / PGSIZE; // 将物理页地址转换为引用计数数组下标
   //my code end
 }
 
@@ -29,9 +29,9 @@ void
 kinit()
 {
   //my code begin
-  char *p = (char*) PGROUNDUP((uint64)end);
-  initlock(&reflock, "refcnt");
-  bd_init(p,(void*)PHYSTOP);
+  char *p = (char*) PGROUNDUP((uint64)end); // 计算内核镜像之后的首个页对齐地址
+  initlock(&reflock, "refcnt"); // 初始化物理页引用计数锁
+  bd_init(p,(void*)PHYSTOP); // 使用剩余物理内存初始化伙伴分配器
   //my code end
 }
 
@@ -43,10 +43,10 @@ void
 kfree(void *pa)
 {
   //my code begin
-  acquire(&reflock);
-  if(--refcnt[refindex(pa)] == 0)
-    bd_free(pa);
-  release(&reflock);
+  acquire(&reflock); // 保护物理页引用计数
+  if(--refcnt[refindex(pa)] == 0) // 减少引用，检查是否为最后一个引用
+    bd_free(pa); // 最后一个引用消失时归还伙伴分配器
+  release(&reflock); // 释放引用计数锁
   //my code end
 }
 
@@ -57,13 +57,13 @@ void *
 kalloc(void)
 {
   //my code begin
-  void *pa = bd_malloc(PGSIZE);
-  if(pa){
-    acquire(&reflock);
-    refcnt[refindex(pa)] = 1;
-    release(&reflock);
+  void *pa = bd_malloc(PGSIZE); // 从伙伴分配器申请一个物理页
+  if(pa){ // 分配成功时初始化引用计数
+    acquire(&reflock); // 保护引用计数数组
+    refcnt[refindex(pa)] = 1; // 新页面由当前调用者独占
+    release(&reflock); // 释放引用计数锁
   }
-  return pa;
+  return pa; // 返回物理页地址或空指针
   //my code end
 }
 
@@ -71,9 +71,9 @@ void
 krefinc(void *pa)
 {
   //my code begin
-  acquire(&reflock);
-  refcnt[refindex(pa)]++;
-  release(&reflock);
+  acquire(&reflock); // 保护引用计数数组
+  refcnt[refindex(pa)]++; // 增加共享页面的引用计数
+  release(&reflock); // 释放引用计数锁
   //my code end
 }
 
@@ -81,10 +81,10 @@ int
 krefcnt(void *pa)
 {
   //my code begin
-  int count;
-  acquire(&reflock);
-  count = refcnt[refindex(pa)];
-  release(&reflock);
-  return count;
+  int count; // 保存读取到的引用计数
+  acquire(&reflock); // 保护引用计数数组
+  count = refcnt[refindex(pa)]; // 读取指定页面的引用次数
+  release(&reflock); // 释放引用计数锁
+  return count; // 返回引用次数
   //my code end
 }

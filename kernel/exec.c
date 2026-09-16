@@ -108,7 +108,7 @@ exec(char *path, char **argv)
     
   // Commit to the user image.
   oldpagetable = p->pagetable;
-  mmapexit(p);
+  mmapexit(p); // 替换地址空间前释放旧程序的所有文件映射
   p->pagetable = pagetable;
   p->sz = sz;
   p->tf->epc = elf.entry;  // initial program counter = main

@@ -133,7 +133,7 @@ static void
 freeproc(struct proc *p)
 {
   //my code begin
-  mmapexit(p);
+  mmapexit(p); // 释放进程遗留的所有文件映射
   if(p->tf)
     kfree((void*)p->tf);
   p->tf = 0;
@@ -281,10 +281,10 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
-  for(i = 0; i < 16; i++){
-    np->vmas[i] = p->vmas[i];
-    if(np->vmas[i].used)
-      np->vmas[i].file = filedup(np->vmas[i].file);
+  for(i = 0; i < 16; i++){ // 复制父进程的所有 VMA 描述符
+    np->vmas[i] = p->vmas[i]; // 将映射地址、长度、权限等元数据复制到子进程
+    if(np->vmas[i].used) // 仅为有效映射增加文件引用
+      np->vmas[i].file = filedup(np->vmas[i].file); // 子进程持有独立的文件对象引用
   }
 
   safestrcpy(np->name, p->name, sizeof(p->name));
@@ -337,7 +337,7 @@ exit(int status)
   if(p == initproc)
     panic("init exiting");
 
-  mmapexit(p);
+  mmapexit(p); // 退出前解除所有文件映射并写回共享页
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

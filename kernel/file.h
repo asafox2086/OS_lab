@@ -27,7 +27,7 @@ struct inode {
   short minor;
   short nlink;
   uint size;
-  uint addrs[NDIRECT+2];
+  uint addrs[NDIRECT+2]; // 数据块地址，额外一项用于二级间接索引
 };
 
 // map major device number to device functions.

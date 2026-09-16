@@ -82,15 +82,15 @@ struct trapframe {
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
-struct file;
+struct file; // VMA 中保存打开文件对象的指针
 struct vma {
-  uint64 addr;
-  uint64 length;
-  uint64 offset;
-  int prot;
-  int flags;
-  struct file *file;
-  int used;
+  uint64 addr; // 映射区域的用户虚拟起始地址
+  uint64 length; // 按页对齐后的映射长度
+  uint64 offset; // 映射起点对应的文件偏移
+  int prot; // PROT_READ 和 PROT_WRITE 访问权限
+  int flags; // MAP_SHARED 或 MAP_PRIVATE 映射类型
+  struct file *file; // 映射文件的持有引用
+  int used; // 标记该 VMA 槽位是否有效
 };
 
 // Per-process state
@@ -112,7 +112,7 @@ struct proc {
   struct trapframe *tf;        // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
-  struct vma vmas[16];
+  struct vma vmas[16]; // 本进程固定数量的文件映射区域
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 };

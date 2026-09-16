@@ -61,8 +61,8 @@ void            ramdiskrw(struct buf*);
 // kalloc.c
 void*           kalloc(void);
 void            kfree(void *);
-void            krefinc(void *);
-int             krefcnt(void *);
+void            krefinc(void *); // 增加物理页共享引用计数
+int             krefcnt(void *); // 获取物理页当前引用计数
 void            kinit();
 
 // log.c
@@ -88,9 +88,9 @@ int             cpuid(void);
 void            exit(int);
 int             fork(void);
 int             growproc(int);
-int             mmapalloc(uint64, int);
-int             mmapunmap(struct proc *, uint64, uint64);
-void            mmapexit(struct proc *);
+int             mmapalloc(uint64, int); // 按需分配发生缺页的文件映射页面
+int             mmapunmap(struct proc *, uint64, uint64); // 解除指定范围的文件映射
+void            mmapexit(struct proc *); // 释放进程退出或 exec 前的全部文件映射
 pagetable_t     proc_pagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);
 int             kill(int);
@@ -164,8 +164,8 @@ void            kvminithart(void);
 uint64          kvmpa(uint64);
 void            kvmmap(uint64, uint64, uint64, int);
 int             mappages(pagetable_t, uint64, uint64, uint64, int);
-int             lazyalloc(uint64);
-int             cowalloc(pagetable_t, uint64);
+int             lazyalloc(uint64); // 为普通懒分配地址建立物理页映射
+int             cowalloc(pagetable_t, uint64); // 为写时复制页建立私有副本
 pagetable_t     uvmcreate(void);
 void            uvminit(pagetable_t, uchar *, uint);
 uint64          uvmalloc(pagetable_t, uint64, uint64);

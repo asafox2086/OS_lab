@@ -26,6 +26,6 @@
 #define SYS_crash  23
 #define SYS_mount  24
 #define SYS_umount 25
-#define SYS_symlink 26
-#define SYS_mmap 27
-#define SYS_munmap 28
+#define SYS_symlink 26 // symlink 系统调用号
+#define SYS_mmap 27 // mmap 系统调用号
+#define SYS_munmap 28 // munmap 系统调用号

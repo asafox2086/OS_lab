@@ -112,14 +112,14 @@ int
 memcmp(const void *s1, const void *s2, uint n)
 {
   //my code begin
-  const char *p1 = s1, *p2 = s2;
-  while (n-- > 0) {
-    if (*p1 != *p2)
-      return *p1 - *p2;
-    p1++;
-    p2++;
+  const char *p1 = s1, *p2 = s2; // 将两个输入地址转换为按字节比较的指针
+  while (n-- > 0) { // 逐字节比较指定长度
+    if (*p1 != *p2) // 发现首个不同字节
+      return *p1 - *p2; // 返回字节差值
+    p1++; // 移动第一个比较指针
+    p2++; // 移动第二个比较指针
   }
-  return 0;
+  return 0; // 全部字节相同
   //my code end
 }
 

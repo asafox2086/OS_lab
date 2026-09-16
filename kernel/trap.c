@@ -68,13 +68,13 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if((r_scause() == 13 || r_scause() == 15) &&
-            mmapalloc(r_stval(), r_scause()) == 0){
-    // mmap page fault
-  } else if(r_scause() == 15 && cowalloc(p->pagetable, r_stval()) == 0){
-    // copy-on-write page fault
-  } else if((r_scause() == 13 || r_scause() == 15) && lazyalloc(r_stval()) == 0){
-    // ok
+  } else if((r_scause() == 13 || r_scause() == 15) && // 仅处理用户读或写缺页异常
+            mmapalloc(r_stval(), r_scause()) == 0){ // 优先为文件映射按需装入页面
+    // mmap 缺页异常
+  } else if(r_scause() == 15 && cowalloc(p->pagetable, r_stval()) == 0){ // 写异常时处理写时复制页面
+    // 写时复制缺页异常
+  } else if((r_scause() == 13 || r_scause() == 15) && lazyalloc(r_stval()) == 0){ // 最后处理普通懒分配页面
+    // 普通懒分配缺页异常
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

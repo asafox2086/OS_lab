@@ -107,31 +107,31 @@ uint64
 walkaddr(pagetable_t pagetable, uint64 va)
 {
   //my code begin
-  pte_t *pte;
-  uint64 pa;
+  pte_t *pte; // 保存目标虚拟地址对应的页表项
+  uint64 pa; // 保存页表项中的物理页地址
 
-  if(va >= MAXVA)
-    return 0;
+  if(va >= MAXVA) // 拒绝超出 Sv39 虚拟地址范围的地址
+    return 0; // 地址非法时返回失败
 
-  pte = walk(pagetable, va, 0);
-  if(pte == 0 || (*pte & PTE_V) == 0){
-    struct proc *p = myproc();
-    for(int i = 0; i < 16; i++)
-      if(p->vmas[i].used && va >= p->vmas[i].addr &&
-         va < p->vmas[i].addr + p->vmas[i].length)
-        return 0;
-    if(lazyalloc(va) < 0)
-      return 0;
-    pte = walk(pagetable, va, 0);
+  pte = walk(pagetable, va, 0); // 查找地址已有的页表项
+  if(pte == 0 || (*pte & PTE_V) == 0){ // 尚未建立有效映射时按需分配
+    struct proc *p = myproc(); // 获取当前进程的 VMA 信息
+    for(int i = 0; i < 16; i++) // 遍历所有文件映射区域
+      if(p->vmas[i].used && va >= p->vmas[i].addr && // 判断地址是否落在 VMA 起点之后
+         va < p->vmas[i].addr + p->vmas[i].length) // 判断地址是否落在 VMA 终点之前
+        return 0; // 文件映射只能由缺页异常处理，不能在内核拷贝中分配
+    if(lazyalloc(va) < 0) // 为普通懒分配地址建立页面
+      return 0; // 分配失败时返回失败
+    pte = walk(pagetable, va, 0); // 重新取得新建的页表项
   }
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
-  if((*pte & PTE_U) == 0)
-    return 0;
-  pa = PTE2PA(*pte);
-  return pa;
+  if(pte == 0) // 页表项仍不存在
+    return 0; // 返回失败
+  if((*pte & PTE_V) == 0) // 页表项无效
+    return 0; // 返回失败
+  if((*pte & PTE_U) == 0) // 页面不允许用户访问
+    return 0; // 返回失败
+  pa = PTE2PA(*pte); // 从页表项提取物理页地址
+  return pa; // 返回物理页地址
   //my code end
 }
 
@@ -169,22 +169,22 @@ int
 lazyalloc(uint64 va)
 {
   //my code begin
-  char *mem;
-  struct proc *p = myproc();
-  uint64 a = PGROUNDDOWN(va);
+  char *mem; // 保存新分配的物理页
+  struct proc *p = myproc(); // 获取当前进程
+  uint64 a = PGROUNDDOWN(va); // 将缺页地址向下对齐到页边界
 
-  if(p == 0 || va >= p->sz || va < PGROUNDDOWN(p->tf->sp))
-    return -1;
+  if(p == 0 || va >= p->sz || va < PGROUNDDOWN(p->tf->sp)) // 检查地址是否属于进程的堆区域
+    return -1; // 非法地址不能懒分配
 
-  mem = kalloc();
-  if(mem == 0)
-    return -1;
-  memset(mem, 0, PGSIZE);
-  if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-    kfree(mem);
-    return -1;
+  mem = kalloc(); // 分配一个用户物理页
+  if(mem == 0) // 检查物理内存是否耗尽
+    return -1; // 分配失败
+  memset(mem, 0, PGSIZE); // 清零新页面
+  if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){ // 建立用户可读写执行映射
+    kfree(mem); // 映射失败时回收页面
+    return -1; // 返回失败
   }
-  return 0;
+  return 0; // 懒分配成功
   //my code end
 }
 
@@ -192,44 +192,44 @@ int
 mmapalloc(uint64 va, int scause)
 {
   //my code begin
-  struct proc *p = myproc();
-  struct vma *v = 0;
-  uint64 a = PGROUNDDOWN(va);
-  char *mem;
-  uint n;
-  uint64 off;
-  int perm = PTE_U;
+  struct proc *p = myproc(); // 获取发生缺页的进程
+  struct vma *v = 0; // 保存命中的虚拟内存区域
+  uint64 a = PGROUNDDOWN(va); // 计算待映射页面的起始地址
+  char *mem; // 保存新分配的物理页
+  uint n; // 保存本页需要读取或写回的字节数
+  uint64 off; // 保存本页对应的文件偏移
+  int perm = PTE_U; // 初始化用户页权限
 
-  for(int i = 0; i < 16; i++)
-    if(p->vmas[i].used && va >= p->vmas[i].addr &&
-       va < p->vmas[i].addr + p->vmas[i].length)
-      v = &p->vmas[i];
-  if(v == 0 || (scause == 13 && !(v->prot & PROT_READ)) ||
-     (scause == 15 && !(v->prot & PROT_WRITE)))
-    return -1;
-  if((mem = kalloc()) == 0)
-    return -1;
-  memset(mem, 0, PGSIZE);
-  off = v->offset + a - v->addr;
-  ilock(v->file->ip);
-  n = 0;
-  if(off < v->file->ip->size)
-    n = v->file->ip->size - off < PGSIZE ? v->file->ip->size - off : PGSIZE;
-  if(n && readi(v->file->ip, 0, (uint64)mem, off, n) != n){
-    iunlock(v->file->ip);
-    kfree(mem);
-    return -1;
+  for(int i = 0; i < 16; i++) // 查找包含缺页地址的 VMA
+    if(p->vmas[i].used && va >= p->vmas[i].addr && // VMA 必须已使用且地址不小于起点
+       va < p->vmas[i].addr + p->vmas[i].length) // 地址必须小于 VMA 终点
+      v = &p->vmas[i]; // 记录命中的 VMA
+  if(v == 0 || (scause == 13 && !(v->prot & PROT_READ)) || // 读异常必须具有读权限
+     (scause == 15 && !(v->prot & PROT_WRITE))) // 写异常必须具有写权限
+    return -1; // 地址或访问权限无效
+  if((mem = kalloc()) == 0) // 为文件页分配物理内存
+    return -1; // 内存不足
+  memset(mem, 0, PGSIZE); // 先清零，以保证文件尾部为零
+  off = v->offset + a - v->addr; // 计算本虚拟页在文件中的偏移
+  ilock(v->file->ip); // 锁定文件 inode 后读取内容
+  n = 0; // 默认文件尾部没有可读数据
+  if(off < v->file->ip->size) // 仅在偏移位于文件内时读取
+    n = v->file->ip->size - off < PGSIZE ? v->file->ip->size - off : PGSIZE; // 限制读取长度不超过一页
+  if(n && readi(v->file->ip, 0, (uint64)mem, off, n) != n){ // 将文件内容读入物理页
+    iunlock(v->file->ip); // 读取失败前释放 inode 锁
+    kfree(mem); // 回收已分配页面
+    return -1; // 返回失败
   }
-  iunlock(v->file->ip);
-  if(v->prot & PROT_READ)
-    perm |= PTE_R;
-  if(v->prot & PROT_WRITE)
-    perm |= PTE_W;
-  if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, perm) < 0){
-    kfree(mem);
-    return -1;
+  iunlock(v->file->ip); // 文件读取完成后释放 inode 锁
+  if(v->prot & PROT_READ) // 根据 VMA 读权限设置页权限
+    perm |= PTE_R; // 允许用户读取此页
+  if(v->prot & PROT_WRITE) // 根据 VMA 写权限设置页权限
+    perm |= PTE_W; // 允许用户写入此页
+  if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, perm) < 0){ // 将物理页映射到用户地址
+    kfree(mem); // 映射失败时回收物理页
+    return -1; // 返回失败
   }
-  return 0;
+  return 0; // 文件页映射成功
   //my code end
 }
 
@@ -237,23 +237,23 @@ static void
 mmapunmap_page(struct proc *p, struct vma *v, uint64 va)
 {
   //my code begin
-  pte_t *pte = walk(p->pagetable, va, 0);
-  if(pte == 0 || (*pte & PTE_V) == 0)
-    return;
-  if(v->flags == MAP_SHARED){
-    uint64 off = v->offset + va - v->addr;
-    uint n = 0;
-    begin_op(v->file->ip->dev);
-    ilock(v->file->ip);
-    if(off < v->file->ip->size)
-      n = v->file->ip->size - off < PGSIZE ? v->file->ip->size - off : PGSIZE;
-    if(n){
-      writei(v->file->ip, 0, PTE2PA(*pte), off, n);
+  pte_t *pte = walk(p->pagetable, va, 0); // 获取待解除映射的页表项
+  if(pte == 0 || (*pte & PTE_V) == 0) // 未实际缺页分配的页面无需处理
+    return; // 直接返回
+  if(v->flags == MAP_SHARED){ // 共享映射需要将修改写回文件
+    uint64 off = v->offset + va - v->addr; // 计算该页的文件偏移
+    uint n = 0; // 初始化需要写回的长度
+    begin_op(v->file->ip->dev); // 开始文件系统日志事务
+    ilock(v->file->ip); // 锁定 inode 后更新文件
+    if(off < v->file->ip->size) // 仅写回文件范围内的内容
+      n = v->file->ip->size - off < PGSIZE ? v->file->ip->size - off : PGSIZE; // 限制写回长度不超过一页
+    if(n){ // 有有效文件数据时才写回
+      writei(v->file->ip, 0, PTE2PA(*pte), off, n); // 将物理页内容写入文件
     }
-    iunlock(v->file->ip);
-    end_op(v->file->ip->dev);
+    iunlock(v->file->ip); // 释放 inode 锁
+    end_op(v->file->ip->dev); // 提交文件系统日志事务
   }
-  uvmunmap(p->pagetable, va, PGSIZE, 1);
+  uvmunmap(p->pagetable, va, PGSIZE, 1); // 移除映射并释放物理页
   //my code end
 }
 
@@ -261,27 +261,27 @@ int
 mmapunmap(struct proc *p, uint64 addr, uint64 length)
 {
   //my code begin
-  for(int i = 0; i < 16; i++){
-    struct vma *v = &p->vmas[i];
-    if(!v->used || addr < v->addr || addr + length > v->addr + v->length)
-      continue;
-    if(addr != v->addr && addr + length != v->addr + v->length)
-      return -1;
-    for(uint64 va = PGROUNDDOWN(addr); va < addr + length; va += PGSIZE)
-      mmapunmap_page(p, v, va);
-    if(addr == v->addr && length == v->length){
-      fileclose(v->file);
-      memset(v, 0, sizeof(*v));
-    } else if(addr == v->addr){
-      v->addr += length;
-      v->length -= length;
-      v->offset += length;
+  for(int i = 0; i < 16; i++){ // 遍历进程的所有 VMA
+    struct vma *v = &p->vmas[i]; // 取得当前 VMA
+    if(!v->used || addr < v->addr || addr + length > v->addr + v->length) // 跳过不包含解除范围的 VMA
+      continue; // 继续查找下一项
+    if(addr != v->addr && addr + length != v->addr + v->length) // 只允许解除 VMA 的前缀、后缀或全部
+      return -1; // 中间切分 VMA 时拒绝请求
+    for(uint64 va = PGROUNDDOWN(addr); va < addr + length; va += PGSIZE) // 按页解除映射
+      mmapunmap_page(p, v, va); // 写回共享页并删除该页映射
+    if(addr == v->addr && length == v->length){ // 整个 VMA 都被解除
+      fileclose(v->file); // 释放 VMA 持有的文件引用
+      memset(v, 0, sizeof(*v)); // 清空 VMA 槽位
+    } else if(addr == v->addr){ // 解除 VMA 的前缀
+      v->addr += length; // 将 VMA 起点向后移动
+      v->length -= length; // 缩短 VMA 长度
+      v->offset += length; // 同步推进文件偏移
     } else {
-      v->length -= length;
+      v->length -= length; // 解除后缀时只缩短 VMA 长度
     }
-    return 0;
+    return 0; // 成功处理一个 VMA
   }
-  return -1;
+  return -1; // 没有找到匹配的 VMA
   //my code end
 }
 
@@ -289,9 +289,9 @@ void
 mmapexit(struct proc *p)
 {
   //my code begin
-  for(int i = 0; i < 16; i++)
-    if(p->vmas[i].used)
-      mmapunmap(p, p->vmas[i].addr, p->vmas[i].length);
+  for(int i = 0; i < 16; i++) // 遍历进程的所有 VMA
+    if(p->vmas[i].used) // 仅处理已使用的映射槽位
+      mmapunmap(p, p->vmas[i].addr, p->vmas[i].length); // 解除整段映射并释放文件引用
   //my code end
 }
 
@@ -299,30 +299,30 @@ int
 cowalloc(pagetable_t pagetable, uint64 va)
 {
   //my code begin
-  pte_t *pte;
-  uint64 pa;
-  uint flags;
-  char *mem;
+  pte_t *pte; // 保存发生写异常的页表项
+  uint64 pa; // 保存原共享物理页地址
+  uint flags; // 保存并修改页表权限位
+  char *mem; // 保存复制后的新物理页
 
-  va = PGROUNDDOWN(va);
-  if(va >= MAXVA || (pte = walk(pagetable, va, 0)) == 0 ||
-     (*pte & PTE_V) == 0 || (*pte & PTE_COW) == 0 || (*pte & PTE_U) == 0)
-    return -1;
+  va = PGROUNDDOWN(va); // 将异常地址对齐到页边界
+  if(va >= MAXVA || (pte = walk(pagetable, va, 0)) == 0 || // 查找有效页表项
+     (*pte & PTE_V) == 0 || (*pte & PTE_COW) == 0 || (*pte & PTE_U) == 0) // 验证它是用户 COW 页
+    return -1; // 非 COW 页不能由此函数处理
 
-  pa = PTE2PA(*pte);
-  if(krefcnt((void*)pa) == 1){
-    *pte = (*pte | PTE_W) & ~PTE_COW;
-    return 0;
+  pa = PTE2PA(*pte); // 取得原共享物理页
+  if(krefcnt((void*)pa) == 1){ // 仅剩当前进程引用时无需复制
+    *pte = (*pte | PTE_W) & ~PTE_COW; // 恢复可写权限并清除 COW 标记
+    return 0; // COW 处理完成
   }
 
-  if((mem = kalloc()) == 0)
-    return -1;
-  memmove(mem, (char*)pa, PGSIZE);
-  flags = PTE_FLAGS(*pte);
-  flags = (flags | PTE_W) & ~PTE_COW;
-  *pte = PA2PTE(mem) | flags | PTE_V;
-  kfree((void*)pa);
-  return 0;
+  if((mem = kalloc()) == 0) // 为私有副本分配新页面
+    return -1; // 内存不足
+  memmove(mem, (char*)pa, PGSIZE); // 复制原共享页的全部内容
+  flags = PTE_FLAGS(*pte); // 读取旧页的权限位
+  flags = (flags | PTE_W) & ~PTE_COW; // 为新页设置可写且非 COW 权限
+  *pte = PA2PTE(mem) | flags | PTE_V; // 将页表项改为指向私有副本
+  kfree((void*)pa); // 释放原共享页的一次引用
+  return 0; // COW 复制成功
   //my code end
 }
 
@@ -359,36 +359,36 @@ void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 size, int do_free)
 {
   //my code begin
-  uint64 a, last;
-  pte_t *pte;
-  uint64 pa;
+  uint64 a, last; // 保存当前页地址和解除范围的最后一页地址
+  pte_t *pte; // 保存当前页的页表项
+  uint64 pa; // 保存待释放的物理页地址
 
-  a = PGROUNDDOWN(va);
-  last = PGROUNDDOWN(va + size - 1);
-  for(;;){
-    if((pte = walk(pagetable, a, 0)) == 0){
-      if(a == last)
-        break;
-      a += PGSIZE;
-      continue;
+  a = PGROUNDDOWN(va); // 对齐解除范围的起始地址
+  last = PGROUNDDOWN(va + size - 1); // 计算解除范围的最后一页
+  for(;;){ // 逐页删除映射
+    if((pte = walk(pagetable, a, 0)) == 0){ // 当前页没有页表项
+      if(a == last) // 已处理到最后一页
+        break; // 结束循环
+      a += PGSIZE; // 移动到下一页
+      continue; // 跳过不存在的映射
     }
-    if((*pte & PTE_V) == 0){
-      if(a == last)
-        break;
-      a += PGSIZE;
-      continue;
+    if((*pte & PTE_V) == 0){ // 页表项无效
+      if(a == last) // 已处理到最后一页
+        break; // 结束循环
+      a += PGSIZE; // 移动到下一页
+      continue; // 跳过未分配的懒映射页
     }
-    if(PTE_FLAGS(*pte) == PTE_V)
-      panic("uvmunmap: not a leaf");
-    if(do_free){
-      pa = PTE2PA(*pte);
-      kfree((void*)pa);
+    if(PTE_FLAGS(*pte) == PTE_V) // 不允许删除中间页表节点
+      panic("uvmunmap: not a leaf"); // 发现非叶子项时终止内核
+    if(do_free){ // 调用者要求回收物理页
+      pa = PTE2PA(*pte); // 取得物理页地址
+      kfree((void*)pa); // 减少引用计数并在需要时释放页面
     }
-    *pte = 0;
-    if(a == last)
-      break;
-    a += PGSIZE;
-    pa += PGSIZE;
+    *pte = 0; // 清除当前页的页表映射
+    if(a == last) // 已处理到最后一页
+      break; // 结束循环
+    a += PGSIZE; // 移动到下一页
+    pa += PGSIZE; // 保持物理地址变量的页步进
   }
   //my code end
 }
@@ -506,30 +506,30 @@ int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   //my code begin
-  pte_t *pte;
-  uint64 pa, i;
-  uint flags;
+  pte_t *pte; // 保存父进程当前页的页表项
+  uint64 pa, i; // 保存共享物理页地址和页循环索引
+  uint flags; // 保存复制到子进程的页权限
 
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
-      continue;
-    if((*pte & PTE_V) == 0)
-      continue;
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if(flags & PTE_W)
-      flags = (flags | PTE_COW) & ~PTE_W;
-    if(mappages(new, i, PGSIZE, pa, flags) != 0)
-      goto err;
-    if(PTE_FLAGS(*pte) & PTE_W)
-      *pte = (*pte | PTE_COW) & ~PTE_W;
-    krefinc((void*)pa);
+  for(i = 0; i < sz; i += PGSIZE){ // 遍历父进程的每个用户页
+    if((pte = walk(old, i, 0)) == 0) // 跳过没有页表项的懒分配页
+      continue; // 继续处理下一页
+    if((*pte & PTE_V) == 0) // 跳过无效页表项
+      continue; // 继续处理下一页
+    pa = PTE2PA(*pte); // 取得父子进程将共享的物理页
+    flags = PTE_FLAGS(*pte); // 取得原页面权限
+    if(flags & PTE_W) // 原可写页需要转换为写时复制页
+      flags = (flags | PTE_COW) & ~PTE_W; // 子进程页设为只读 COW
+    if(mappages(new, i, PGSIZE, pa, flags) != 0) // 在子进程页表建立共享映射
+      goto err; // 映射失败时清理已经建立的映射
+    if(PTE_FLAGS(*pte) & PTE_W) // 父进程原页可写时同步改为 COW
+      *pte = (*pte | PTE_COW) & ~PTE_W; // 移除父页写权限并设置 COW 标志
+    krefinc((void*)pa); // 增加共享物理页的引用计数
   }
-  return 0;
+  return 0; // 所有页面复制成功
 
  err:
-  uvmunmap(new, 0, i, 1);
-  return -1;
+  uvmunmap(new, 0, i, 1); // 释放子进程中已建立的共享映射
+  return -1; // 返回复制失败
   //my code end
 }
 
@@ -553,28 +553,28 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   //my code begin
-  uint64 n, va0, pa0;
+  uint64 n, va0, pa0; // 保存本次拷贝长度、页地址和物理地址
 
-  while(len > 0){
-    va0 = PGROUNDDOWN(dstva);
-    if(va0 < MAXVA){
-      pte_t *pte = walk(pagetable, va0, 0);
-      if(pte && (*pte & PTE_COW) && cowalloc(pagetable, va0) < 0)
-        return -1;
+  while(len > 0){ // 按页向用户空间复制数据
+    va0 = PGROUNDDOWN(dstva); // 计算目标地址所在页的起点
+    if(va0 < MAXVA){ // 仅处理合法用户虚拟地址
+      pte_t *pte = walk(pagetable, va0, 0); // 查找目标页的页表项
+      if(pte && (*pte & PTE_COW) && cowalloc(pagetable, va0) < 0) // 内核写入 COW 页前先创建私有副本
+        return -1; // COW 分配失败
     }
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (dstva - va0);
-    if(n > len)
-      n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
+    pa0 = walkaddr(pagetable, va0); // 将目标虚拟页转换为物理页
+    if(pa0 == 0) // 地址转换或懒分配失败
+      return -1; // 返回失败
+    n = PGSIZE - (dstva - va0); // 计算当前页剩余可写字节数
+    if(n > len) // 最后一页可能不足整页
+      n = len; // 限制拷贝长度为剩余数据长度
+    memmove((void *)(pa0 + (dstva - va0)), src, n); // 将内核数据写入用户物理页
 
-    len -= n;
-    src += n;
-    dstva = va0 + PGSIZE;
+    len -= n; // 扣除已复制字节数
+    src += n; // 移动内核源地址
+    dstva = va0 + PGSIZE; // 移动到下一用户页
   }
-  return 0;
+  return 0; // 全部数据复制成功
   //my code end
 }
 

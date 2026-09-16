@@ -106,9 +106,9 @@ extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
 extern uint64 sys_ntas(void);
 extern uint64 sys_crash(void);
-extern uint64 sys_symlink(void);
-extern uint64 sys_mmap(void);
-extern uint64 sys_munmap(void);
+extern uint64 sys_symlink(void); // symlink 系统调用处理函数
+extern uint64 sys_mmap(void); // mmap 系统调用处理函数
+extern uint64 sys_munmap(void); // munmap 系统调用处理函数
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -134,9 +134,9 @@ static uint64 (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_ntas]    sys_ntas,
 [SYS_crash]   sys_crash,
-[SYS_symlink] sys_symlink,
-[SYS_mmap]    sys_mmap,
-[SYS_munmap]  sys_munmap,
+[SYS_symlink] sys_symlink, // 注册 symlink 系统调用入口
+[SYS_mmap]    sys_mmap, // 注册 mmap 系统调用入口
+[SYS_munmap]  sys_munmap, // 注册 munmap 系统调用入口
 };
 
 void

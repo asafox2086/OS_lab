@@ -379,52 +379,52 @@ static uint
 bmap(struct inode *ip, uint bn)
 {
   //my code begin
-  uint addr, *a;
-  struct buf *bp;
+  uint addr, *a; // 保存数据块地址和间接块地址数组
+  struct buf *bp; // 保存当前读入的间接块缓冲区
 
-  if(bn < NDIRECT){
-    if((addr = ip->addrs[bn]) == 0)
-      ip->addrs[bn] = addr = balloc(ip->dev);
-    return addr;
+  if(bn < NDIRECT){ // 优先处理直接索引块
+    if((addr = ip->addrs[bn]) == 0) // 该直接索引项尚未分配
+      ip->addrs[bn] = addr = balloc(ip->dev); // 分配数据块并写入 inode
+    return addr; // 返回直接数据块地址
   }
-  bn -= NDIRECT;
+  bn -= NDIRECT; // 转换为单级间接区中的索引
 
-  if(bn < NINDIRECT){
+  if(bn < NINDIRECT){ // 处理单级间接索引块
     // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0)
-      ip->addrs[NDIRECT] = addr = balloc(ip->dev);
-    bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
-      a[bn] = addr = balloc(ip->dev);
-      log_write(bp);
+    if((addr = ip->addrs[NDIRECT]) == 0) // 单级间接块不存在时分配
+      ip->addrs[NDIRECT] = addr = balloc(ip->dev); // 记录单级间接块地址
+    bp = bread(ip->dev, addr); // 读入单级间接块
+    a = (uint*)bp->data; // 将缓冲区内容解释为数据块地址数组
+    if((addr = a[bn]) == 0){ // 目标数据块尚未分配
+      a[bn] = addr = balloc(ip->dev); // 分配目标数据块
+      log_write(bp); // 将修改后的间接块写入日志
     }
-    brelse(bp);
-    return addr;
+    brelse(bp); // 释放间接块缓冲区
+    return addr; // 返回数据块地址
   }
 
-  bn -= NINDIRECT;
-  if(bn < NINDIRECT * NINDIRECT){
-    if((addr = ip->addrs[NDIRECT+1]) == 0)
-      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
-    bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn/NINDIRECT]) == 0){
-      a[bn/NINDIRECT] = addr = balloc(ip->dev);
-      log_write(bp);
+  bn -= NINDIRECT; // 转换为二级间接区中的索引
+  if(bn < NINDIRECT * NINDIRECT){ // 处理二级间接索引块
+    if((addr = ip->addrs[NDIRECT+1]) == 0) // 顶层二级间接块不存在时分配
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev); // 记录顶层间接块地址
+    bp = bread(ip->dev, addr); // 读入顶层间接块
+    a = (uint*)bp->data; // 获取顶层间接地址数组
+    if((addr = a[bn/NINDIRECT]) == 0){ // 对应的二级间接块不存在时分配
+      a[bn/NINDIRECT] = addr = balloc(ip->dev); // 分配二级间接块并保存地址
+      log_write(bp); // 记录顶层间接块的更新
     }
-    brelse(bp);
-    bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn%NINDIRECT]) == 0){
-      a[bn%NINDIRECT] = addr = balloc(ip->dev);
-      log_write(bp);
+    brelse(bp); // 释放顶层间接块缓冲区
+    bp = bread(ip->dev, addr); // 读入对应的二级间接块
+    a = (uint*)bp->data; // 获取二级间接地址数组
+    if((addr = a[bn%NINDIRECT]) == 0){ // 目标数据块不存在时分配
+      a[bn%NINDIRECT] = addr = balloc(ip->dev); // 分配数据块并保存地址
+      log_write(bp); // 记录二级间接块的更新
     }
-    brelse(bp);
-    return addr;
+    brelse(bp); // 释放二级间接块缓冲区
+    return addr; // 返回目标数据块地址
   }
 
-  panic("bmap: out of range");
+  panic("bmap: out of range"); // 文件块号超过二级索引支持的范围
   //my code end
 }
 
@@ -437,51 +437,51 @@ static void
 itrunc(struct inode *ip)
 {
   //my code begin
-  int i, j;
-  struct buf *bp;
-  uint *a;
+  int i, j; // 保存直接、一级和二级索引循环变量
+  struct buf *bp; // 保存间接块缓冲区
+  uint *a; // 保存间接块中的地址数组
 
-  for(i = 0; i < NDIRECT; i++){
-    if(ip->addrs[i]){
-      bfree(ip->dev, ip->addrs[i]);
-      ip->addrs[i] = 0;
+  for(i = 0; i < NDIRECT; i++){ // 释放所有直接数据块
+    if(ip->addrs[i]){ // 仅释放已分配的块
+      bfree(ip->dev, ip->addrs[i]); // 归还直接数据块
+      ip->addrs[i] = 0; // 清除 inode 中的地址
     }
   }
 
-  if(ip->addrs[NDIRECT]){
-    bp = bread(ip->dev, ip->addrs[NDIRECT]);
-    a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
-      if(a[j])
-        bfree(ip->dev, a[j]);
+  if(ip->addrs[NDIRECT]){ // 存在单级间接块时释放其内容
+    bp = bread(ip->dev, ip->addrs[NDIRECT]); // 读入单级间接块
+    a = (uint*)bp->data; // 获取数据块地址数组
+    for(j = 0; j < NINDIRECT; j++){ // 遍历所有单级间接项
+      if(a[j]) // 当前项指向数据块
+        bfree(ip->dev, a[j]); // 释放该数据块
     }
-    brelse(bp);
-    bfree(ip->dev, ip->addrs[NDIRECT]);
-    ip->addrs[NDIRECT] = 0;
+    brelse(bp); // 释放单级间接块缓冲区
+    bfree(ip->dev, ip->addrs[NDIRECT]); // 释放单级间接块本身
+    ip->addrs[NDIRECT] = 0; // 清除 inode 中的单级间接块地址
   }
 
-  if(ip->addrs[NDIRECT+1]){
-    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
-    a = (uint*)bp->data;
-    for(i = 0; i < NINDIRECT; i++){
-      if(a[i]){
-        struct buf *bp2 = bread(ip->dev, a[i]);
-        uint *a2 = (uint*)bp2->data;
-        for(j = 0; j < NINDIRECT; j++){
-          if(a2[j])
-            bfree(ip->dev, a2[j]);
+  if(ip->addrs[NDIRECT+1]){ // 存在二级间接块时递归释放其内容
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]); // 读入顶层二级间接块
+    a = (uint*)bp->data; // 获取二级间接块地址数组
+    for(i = 0; i < NINDIRECT; i++){ // 遍历所有二级间接块
+      if(a[i]){ // 当前二级间接块存在
+        struct buf *bp2 = bread(ip->dev, a[i]); // 读入当前二级间接块
+        uint *a2 = (uint*)bp2->data; // 获取数据块地址数组
+        for(j = 0; j < NINDIRECT; j++){ // 遍历该二级间接块内的数据块
+          if(a2[j]) // 当前数据块存在
+            bfree(ip->dev, a2[j]); // 释放数据块
         }
-        brelse(bp2);
-        bfree(ip->dev, a[i]);
+        brelse(bp2); // 释放二级间接块缓冲区
+        bfree(ip->dev, a[i]); // 释放二级间接块本身
       }
     }
-    brelse(bp);
-    bfree(ip->dev, ip->addrs[NDIRECT+1]);
-    ip->addrs[NDIRECT+1] = 0;
+    brelse(bp); // 释放顶层间接块缓冲区
+    bfree(ip->dev, ip->addrs[NDIRECT+1]); // 释放顶层二级间接块
+    ip->addrs[NDIRECT+1] = 0; // 清除 inode 中的二级间接块地址
   }
 
-  ip->size = 0;
-  iupdate(ip);
+  ip->size = 0; // 将文件逻辑长度清零
+  iupdate(ip); // 将 inode 更新写回磁盘
   //my code end
 }
 

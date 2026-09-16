@@ -29,19 +29,19 @@ struct file*
 filealloc(void)
 {
   //my code begin
-  struct file *f;
+  struct file *f; // 保存从伙伴分配器取得的文件对象
 
-  f = bd_malloc(sizeof(*f));
-  if(f == 0)
-    return 0;
+  f = bd_malloc(sizeof(*f)); // 从伙伴分配器申请文件对象内存
+  if(f == 0) // 内存不足时不能创建文件对象
+    return 0; // 返回失败
 
-  memset(f, 0, sizeof(*f));
+  memset(f, 0, sizeof(*f)); // 清零新文件对象的所有字段
 
-  acquire(&ftable.lock);
-  f->ref = 1;
-  release(&ftable.lock);
+  acquire(&ftable.lock); // 保护文件引用计数
+  f->ref = 1; // 新对象由调用者持有一个引用
+  release(&ftable.lock); // 释放文件表锁
 
-  return f;
+  return f; // 返回初始化后的文件对象
   //my code end
 }
 
@@ -62,38 +62,38 @@ void
 fileclose(struct file *f)
 {
   //my code begin
-  int type;
-  int writable;
-  int dev;
-  struct pipe *pipe;
-  struct inode *ip;
+  int type; // 保存关闭前的文件类型
+  int writable; // 保存关闭前的可写标志
+  int dev; // 保存 inode 所在设备号
+  struct pipe *pipe; // 保存管道对象指针
+  struct inode *ip; // 保存 inode 指针
 
-  acquire(&ftable.lock);
-  if(f->ref < 1)
-    panic("fileclose");
-  if(--f->ref > 0){
-    release(&ftable.lock);
-    return;
+  acquire(&ftable.lock); // 保护文件对象引用计数
+  if(f->ref < 1) // 引用计数非法说明重复关闭
+    panic("fileclose"); // 终止内核
+  if(--f->ref > 0){ // 仍有其他引用时无需销毁对象
+    release(&ftable.lock); // 释放文件表锁
+    return; // 结束关闭操作
   }
-  type = f->type;
-  writable = f->writable;
-  pipe = f->pipe;
-  ip = f->ip;
-  if(type == FD_INODE || type == FD_DEVICE)
-    dev = ip->dev;
-  f->ref = 0;
-  f->type = FD_NONE;
-  release(&ftable.lock);
+  type = f->type; // 保存文件类型供解锁后使用
+  writable = f->writable; // 保存可写标志供解锁后使用
+  pipe = f->pipe; // 保存管道指针供解锁后使用
+  ip = f->ip; // 保存 inode 指针供解锁后使用
+  if(type == FD_INODE || type == FD_DEVICE) // inode 和设备文件都需要设备号
+    dev = ip->dev; // 记录设备号
+  f->ref = 0; // 标记对象不再被引用
+  f->type = FD_NONE; // 清除文件类型
+  release(&ftable.lock); // 解锁后执行可能阻塞的资源释放
 
-  if(type == FD_PIPE){
-    pipeclose(pipe, writable);
-  } else if(type == FD_INODE || type == FD_DEVICE){
-    begin_op(dev);
-    iput(ip);
-    end_op(dev);
+  if(type == FD_PIPE){ // 管道文件释放管道端点
+    pipeclose(pipe, writable); // 关闭相应的读或写端
+  } else if(type == FD_INODE || type == FD_DEVICE){ // inode 或设备文件释放 inode 引用
+    begin_op(dev); // 开始文件系统日志事务
+    iput(ip); // 释放 inode 引用
+    end_op(dev); // 结束文件系统日志事务
   }
 
-  bd_free(f);
+  bd_free(f); // 将文件对象内存归还伙伴分配器
   //my code end
 }
 

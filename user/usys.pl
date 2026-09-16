@@ -40,6 +40,6 @@ entry("ntas");
 entry("crash");
 entry("mount");
 entry("umount");
-entry("symlink");
-entry("mmap");
-entry("munmap");
+entry("symlink"); # 生成 symlink 系统调用存根
+entry("mmap"); # 生成 mmap 系统调用存根
+entry("munmap"); # 生成 munmap 系统调用存根
