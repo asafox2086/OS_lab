@@ -84,6 +84,16 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
+  if(which_dev == 2 && p->alarm_interval > 0 && !p->alarm_active){ // 仅在用户态时钟中断且无活动处理函数时计数
+    p->alarm_ticks++; // 累加当前闹钟周期消耗的时钟滴答
+    if(p->alarm_ticks >= p->alarm_interval){ // 检查是否已经达到用户设置的周期
+      p->alarm_ticks = 0; // 为下一次周期闹钟重新开始计数
+      p->alarm_active = 1; // 阻止处理函数执行期间再次递交闹钟
+      p->alarm_tf = *(p->tf); // 保存被中断程序的全部用户寄存器状态
+      p->tf->epc = p->alarm_handler; // 让返回用户态时从处理函数开始执行
+    }
+  }
+
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();

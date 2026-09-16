@@ -30,6 +30,8 @@ int umount(char*);
 int symlink(const char*, const char*); // 声明创建符号链接的用户接口
 void *mmap(void*, uint, int, int, int, uint); // 声明文件内存映射用户接口
 int munmap(void*, uint); // 声明解除文件内存映射用户接口
+int sigalarm(int, void (*)()); // 声明设置用户态周期闹钟的接口
+int sigreturn(void); // 声明恢复闹钟打断现场的接口
 
 // ulib.c
 int stat(const char*, struct stat*);

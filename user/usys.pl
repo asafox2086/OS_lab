@@ -43,3 +43,5 @@ entry("umount");
 entry("symlink"); # 生成 symlink 系统调用存根
 entry("mmap"); # 生成 mmap 系统调用存根
 entry("munmap"); # 生成 munmap 系统调用存根
+entry("sigalarm"); # 生成 sigalarm 系统调用存根
+entry("sigreturn"); # 生成 sigreturn 系统调用存根

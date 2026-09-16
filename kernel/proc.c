@@ -93,6 +93,7 @@ allocpid() {
 static struct proc*
 allocproc(void)
 {
+  //my code begin
   struct proc *p;
 
   for(p = proc; p < &proc[NPROC]; p++) {
@@ -107,6 +108,11 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->alarm_interval = 0; // 新进程初始不启用用户态闹钟
+  p->alarm_ticks = 0; // 清空闹钟已经计数的时钟滴答
+  p->alarm_handler = 0; // 清空尚未设置的处理函数地址
+  p->alarm_active = 0; // 新进程没有正在执行的处理函数
+  memset(&p->alarm_tf, 0, sizeof(p->alarm_tf)); // 清空保存的用户寄存器现场
 
   // Allocate a trapframe page.
   if((p->tf = (struct trapframe *)kalloc()) == 0){
@@ -124,6 +130,7 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   return p;
+  //my code end
 }
 
 // free a proc structure and the data hanging from it,

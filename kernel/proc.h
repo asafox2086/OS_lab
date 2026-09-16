@@ -112,6 +112,11 @@ struct proc {
   struct trapframe *tf;        // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
+  int alarm_interval; // 保存用户设置的闹钟周期
+  int alarm_ticks; // 记录本周期已消耗的时钟滴答数
+  uint64 alarm_handler; // 保存用户态闹钟处理函数地址
+  int alarm_active; // 标记处理函数是否正在执行以避免重入
+  struct trapframe alarm_tf; // 备份闹钟打断时的完整用户寄存器状态
   struct vma vmas[16]; // 本进程固定数量的文件映射区域
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)

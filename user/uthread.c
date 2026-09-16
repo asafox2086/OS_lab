@@ -14,7 +14,20 @@ typedef struct thread thread_t, *thread_p;
 typedef struct mutex mutex_t, *mutex_p;
 
 struct thread {
+  uint64     ra;                // 保存线程切换后的返回地址
   uint64     sp;                /* saved stack pointer */
+  uint64     s0;                // 保存被调用者保存寄存器 s0
+  uint64     s1;                // 保存被调用者保存寄存器 s1
+  uint64     s2;                // 保存被调用者保存寄存器 s2
+  uint64     s3;                // 保存被调用者保存寄存器 s3
+  uint64     s4;                // 保存被调用者保存寄存器 s4
+  uint64     s5;                // 保存被调用者保存寄存器 s5
+  uint64     s6;                // 保存被调用者保存寄存器 s6
+  uint64     s7;                // 保存被调用者保存寄存器 s7
+  uint64     s8;                // 保存被调用者保存寄存器 s8
+  uint64     s9;                // 保存被调用者保存寄存器 s9
+  uint64     s10;               // 保存被调用者保存寄存器 s10
+  uint64     s11;               // 保存被调用者保存寄存器 s11
   char stack[STACK_SIZE];       /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
 };
@@ -38,6 +51,7 @@ thread_init(void)
 static void 
 thread_schedule(void)
 {
+  //my code begin
   thread_p t;
 
   /* Find another runnable thread. */
@@ -61,23 +75,27 @@ thread_schedule(void)
 
   if (current_thread != next_thread) {         /* switch threads?  */
     next_thread->state = RUNNING;
-     uthread_switch((uint64) &current_thread, (uint64) &next_thread);
+    thread_p previous_thread = current_thread; // 保存即将切出的线程
+    current_thread = next_thread; // 在切换前更新当前线程指针
+    uthread_switch((uint64)previous_thread, (uint64)next_thread); // 保存旧线程并恢复新线程上下文
   } else
     next_thread = 0;
+  //my code end
 }
 
 void 
 thread_create(void (*func)())
 {
+  //my code begin
   thread_p t;
 
   for (t = all_thread; t < all_thread + MAX_THREAD; t++) {
     if (t->state == FREE) break;
   }
-  t->sp = (uint64) (t->stack + STACK_SIZE);// set sp to the top of the stack
-  t->sp -= 104;                            // space for registers that uthread_switch expects
-  * (uint64 *) (t->sp) = (uint64)func;     // push return address on stack
+  t->ra = (uint64)func; // 让首次恢复上下文后的 ret 跳转到线程函数
+  t->sp = (uint64)(t->stack + STACK_SIZE); // 将线程私有栈顶作为首次运行的栈指针
   t->state = RUNNABLE;
+  //my code end
 }
 
 void 

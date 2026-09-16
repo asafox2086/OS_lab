@@ -108,6 +108,36 @@ sys_uptime(void)
 }
 
 uint64
+sys_sigalarm(void)
+{
+  //my code begin
+  int interval; // 保存用户传入的闹钟周期
+  uint64 handler; // 保存用户传入的处理函数地址
+  struct proc *p = myproc(); // 获取当前设置闹钟的进程
+  if(argint(0, &interval) < 0 || argaddr(1, &handler) < 0 || interval < 0) // 读取参数并拒绝负周期
+    return -1; // 参数无效时不修改闹钟状态
+  p->alarm_interval = interval; // 保存新的闹钟周期，零表示关闭闹钟
+  p->alarm_handler = handler; // 保存处理函数地址，地址零也是合法值
+  p->alarm_ticks = 0; // 从新周期开始重新计数
+  p->alarm_active = 0; // 允许新设置的闹钟再次被递交
+  return 0; // 成功设置闹钟
+  //my code end
+}
+
+uint64
+sys_sigreturn(void)
+{
+  //my code begin
+  struct proc *p = myproc(); // 获取完成处理函数的当前进程
+  if(!p->alarm_active) // 只允许已递交闹钟的处理函数恢复现场
+    return -1; // 非法调用不覆盖当前用户寄存器
+  *(p->tf) = p->alarm_tf; // 恢复时钟中断发生时保存的完整 trapframe
+  p->alarm_active = 0; // 标记处理函数已结束，允许下一次闹钟递交
+  return p->tf->a0; // 返回原 a0，避免 syscall 覆盖恢复后的寄存器
+  //my code end
+}
+
+uint64
 sys_mmap(void)
 {
   //my code begin
