@@ -1,8 +1,8 @@
-# xv6 Lab 7：mmap/munmap 实验报告
+# xv6 Lab 7：mmap/munmap 解题思路
 
-本实验遵循最少改动原则，只增加 mmap/munmap 所需的数据结构、系统调用接线、缺页处理和映射生命周期管理。官方 `mmaptest` 保留在用户程序列表中，作为评分测试入口。
+这一题的关键是串起 mmap/munmap 所需的数据结构、系统调用、缺页处理和映射生命周期。官方 `mmaptest` 保留在用户程序列表中，用来覆盖主要行为和边界情况。
 
-## 一、改了哪里
+## 一、从哪里入手
 
 ### `kernel/proc.h`
 
@@ -62,7 +62,7 @@
 
 新增函数：`memcmp()`，用于官方 `mmaptest` 比较两个映射文件的内容。
 
-## 二、改后的算法和注意事项
+## 二、核心流程与注意事项
 
 ### 1. mmap 的懒加载算法
 
@@ -95,11 +95,11 @@ mmap()
 - `mmap()` 不提前分配物理内存，支持大于物理内存的文件映射。
 - 页错误先判断 VMA，再进入已有的 COW/lazy allocation 路径。
 - 只允许 `PROT_READ`、`PROT_WRITE` 及 `MAP_SHARED`、`MAP_PRIVATE`。
-- 只允许 `addr` 和 `offset` 为 0，符合本实验限定范围。
+- 只允许 `addr` 和 `offset` 为 0，符合题目限定范围。
 - `MAP_SHARED | PROT_WRITE` 要求文件以可写方式打开；`MAP_PRIVATE` 可映射只读文件。
 - VMA 使用固定 16 项数组，符合实验要求且不引入额外动态结构。
 
-## 测试结果
+## 三、如何验证
 
 - `mmaptest`：`mmap_test OK`、`fork_test OK`、`mmaptest: all tests succeeded`。
 - `make kernel/kernel` 和包含 `mmaptest` 的 `make fs.img` 均成功。

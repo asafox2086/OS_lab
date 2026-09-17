@@ -1,6 +1,8 @@
-# xv6 Lab 11：网络实验报告
+# xv6 Lab 11：网络解题思路
 
-## 一、改了哪里
+这一题需要把网卡驱动、协议栈和用户态接口串成一条完整路径，同时处理 DMA 描述符、报文缓冲区和 socket 接收队列的生命周期。
+
+## 一、从哪里入手
 
 - 新增课程提供的网络框架：`kernel/e1000.c`、`kernel/e1000_dev.h`、`kernel/net.c`、`kernel/net.h`、`kernel/pci.c`、`kernel/sysnet.c`、`user/nettests.c` 与测试服务脚本。
 - `e1000_transmit()` 与 `e1000_recv()`：实现 TX/RX 环描述符的发送、回收、替换和协议层递交。
@@ -8,7 +10,7 @@
 - `file.c`、`file.h`：新增 `FD_SOCK` 文件类型并接入读、写、关闭方法；`sys_connect()` 和系统调用表提供用户接口。
 - `main.c`、`plic.c`、`trap.c`、`vm.c`、`Makefile`：初始化 PCI/E1000，映射 MMIO，处理网卡中断，构建 `nettests` 并启用 QEMU 用户网络。
 
-## 二、改之后的算法
+## 二、收发包核心流程
 
 发送时使用 `E1000_TDT` 找到空闲描述符；描述符完成后回收旧 mbuf，写入新报文地址、长度和完成状态请求，再推进尾指针。接收中断从 `E1000_RDT + 1` 扫描所有完成描述符，将原 mbuf 交给协议栈，同时立即补入新 mbuf 并更新接收尾指针。
 

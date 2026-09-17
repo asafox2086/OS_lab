@@ -1,8 +1,8 @@
-# xv6 Lab 6：文件系统实验报告
+# xv6 Lab 6：文件系统解题思路
 
-本实验遵循最少改动原则，只修改大文件和符号链接所需的文件。`bigfile.c` 与 `symlinktest.c` 保留在用户程序列表中，作为大文件和符号链接的独立测试入口。
+这一题分为大文件和符号链接两部分，实现时只沿着相关文件系统路径修改。`bigfile.c` 与 `symlinktest.c` 保留在用户程序列表中，分别作为两部分的独立验证入口。
 
-## 一、修改位置
+## 一、实现切入点
 
 ### `kernel/fs.h`
 
@@ -53,7 +53,7 @@
 
 - 增加 `symlink` 系统调用汇编入口生成项。
 
-## 二、修改后的算法
+## 二、核心实现思路
 
 ### 1. 双重间接块
 
@@ -102,10 +102,10 @@ namei(path)
 
 `namei()` 返回 inode 后，`sys_open()` 立即取得 inode 锁并持有 inode 引用。解析下一层链接前，先解锁并释放当前引用，再获取下一 inode。这样 `unlink()` 即使同时删除目录项，也不能在 `sys_open()` 仍持有引用时回收当前 inode，避免访问已经失效的 inode。
 
-## 三、验证结果
+## 三、如何验证
 
 - `make clean && make`：通过。
 - `bigfile`：写出并读回 `65803` 个块，输出 `bigfile done; ok`。
 - `symlinktest`：基础符号链接测试通过。
 - `symlinktest`：并发符号链接测试通过。
-- 原有 `usertests` 已运行到后续长时间文件测试；之前基线中的 `sbrkfail` 仍会失败，本实验没有扩大范围修改该既有 lazy allocation 问题。
+- 原有 `usertests` 已运行到后续长时间文件测试；之前基线中的 `sbrkfail` 仍会失败，这一题没有扩大范围修改该既有 lazy allocation 问题。

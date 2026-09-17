@@ -1,8 +1,8 @@
-# xv6 Lab 5：COW Fork 实验报告
+# xv6 Lab 5：COW Fork 解题思路
 
-本实验严格按照 `doc/Lab4/clipboard.txt` 实现 fork 的写时拷贝（Copy-on-Write，COW）。代码遵循最少改动原则，只修改 COW 必需的函数。
+这一题需要按照 `doc/Lab4/clipboard.txt` 为 fork 实现写时拷贝（Copy-on-Write，COW）。思路是尽量复用现有页表流程，只修改 COW 必需的路径。
 
-## 一、代码修改位置
+## 一、实现切入点
 
 ### `kernel/riscv.h`
 
@@ -43,7 +43,7 @@
 
 `kernel/proc.c` 中的 `fork()` 保持不变，因为它原本就通过 `uvmcopy()` 建立子进程地址空间；COW 逻辑只需放在 `uvmcopy()` 中即可。
 
-## 二、修改后的 COW 算法
+## 二、COW 核心流程
 
 ### 1. fork 阶段
 
@@ -105,7 +105,7 @@ kfree()
 
 这样 `read()` 等系统调用写入子进程内存时，不会修改父进程的共享页面。
 
-## 三、实验要求对应处理
+## 三、关键问题与处理
 
 - fork 时不分配新物理页：`uvmcopy()` 共享物理地址并增加引用计数。
 - 父子页面不可写：共享页面的父子 PTE 都清除 `PTE_W`，并用 `PTE_COW` 标记。
@@ -115,4 +115,4 @@ kfree()
 - 内存耗尽：COW 分配新页失败时返回错误，`usertrap()` 将当前进程标记并结束。
 - 原有代码复用：`fork()`、`uvmunmap()` 和 buddy allocator 的整体调用流程保持不变。
 
-验证结果：`make` 编译通过，`cowtest` 输出 `ALL COW TESTS PASSED`。
+验证：`make` 编译通过，`cowtest` 输出 `ALL COW TESTS PASSED`。
